@@ -1,92 +1,8 @@
 use crate::rlox::error::{ErrorType, Logger, LoxError};
-use std::fmt::{Display, Formatter};
+use crate::rlox::token::{Token, TokenType};
+use std::fmt::Display;
 use std::iter::Peekable;
 use std::str::Chars;
-
-#[derive(Debug, Clone)]
-pub enum TokenType {
-    // Single-character tokens
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    Semicolon,
-    Slash,
-    Star,
-
-    // 1-2 character tokens
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-
-    // Literals
-    Identifier,
-    String(String),
-    Number(f64),
-
-    // Keywords
-    If,
-    Else,
-    And,
-    Or,
-    For,
-    While,
-    True,
-    False,
-    Nil,
-    Var,
-    Fun,
-    Class,
-    This,
-    Super,
-    Print,
-    Return,
-
-    EOF,
-}
-
-fn get_word_token(word: &str) -> TokenType {
-    match word {
-        "if" => TokenType::If,
-        "else" => TokenType::Else,
-        "and" => TokenType::And,
-        "or" => TokenType::Or,
-        "for" => TokenType::For,
-        "while" => TokenType::While,
-        "true" => TokenType::True,
-        "false" => TokenType::False,
-        "nil" => TokenType::Nil,
-        "var" => TokenType::Var,
-        "fun" => TokenType::Fun,
-        "class" => TokenType::Class,
-        "this" => TokenType::This,
-        "super" => TokenType::Super,
-        "print" => TokenType::Print,
-        "return" => TokenType::Return,
-        _ => TokenType::Identifier,
-    }
-}
-
-pub struct Token {
-    pub token_type: TokenType,
-    pub lexeme: String,
-    pub line: usize,
-}
-
-impl Display for Token {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {}", self.token_type, &self.lexeme)
-    }
-}
 
 pub struct TokenIter<'a> {
     source: &'a str,
@@ -287,7 +203,7 @@ impl<'a> TokenIter<'a> {
 
     fn scan_identifier(&mut self) -> Option<TokenType> {
         self.skip_while(&|next| next.is_alphanumeric() || next == '_');
-        Some(get_word_token(self.lexeme()))
+        Some(TokenType::from_word(self.lexeme()))
     }
 
     fn log_error(&mut self, message: &str) {

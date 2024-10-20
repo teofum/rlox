@@ -1,5 +1,6 @@
 mod scanner;
 mod error;
+mod token;
 
 use crate::rlox::error::Logger;
 use crate::rlox::scanner::Scanner;

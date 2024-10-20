@@ -2,8 +2,6 @@ mod rlox;
 
 use colored::Colorize;
 use std::env;
-use std::error::Error;
-use std::io::Read;
 
 fn main() {
     let mut args = env::args().skip(1);
