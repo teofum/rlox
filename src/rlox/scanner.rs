@@ -107,25 +107,37 @@ impl<'a> TokenIter<'a> {
         &self.source[..self.cursor]
     }
 
-    /// Consume the next character and return it
+    /// Peeks ahead multiple characters and matches against a character.
+    ///
+    /// Returns `true` if the given character matches, `false` if it does not.
+    fn lookahead<F>(&self, from: usize, pred: &F) -> bool
+    where
+        F: Fn(char) -> bool,
+    {
+        self.source[self.cursor + from..].starts_with(pred)
+    }
+
+    /// Peeks the next character and checks if it is equal to `c`. Equivalent to `lookahead(0, c)`.
+    ///
+    /// Returns `true` if the character matches, `false` if it does not.
+    fn next_is(&self, c: char) -> bool {
+        self.lookahead(0, &|next| next == c)
+    }
+
+    /// Consumes the next character and returns it.
+    ///
+    /// Returns `None` if there are no more characters.
     fn next_char(&mut self) -> Option<char> {
         let c = self.chars.next();
         if c.is_some() { self.cursor += 1; }
         c
     }
 
-    /// Peek the next character and check if it is `c`
-    /// # Returns
-    /// `true` if the character matched, `false` otherwise
-    fn peek_match(&mut self, c: char) -> bool {
-        self.chars.peek().is_some_and(|next| *next == c)
-    }
-
-    /// Consume the next character only if it matches `c`
-    /// # Returns
-    /// `true` if the character matched and was consumed, `false` otherwise
+    /// Consumes the next character only if it matches `c`.
+    ///
+    /// Returns `true` if the character matched and was consumed, `false` otherwise.
     fn match_next(&mut self, c: char) -> bool {
-        if self.peek_match(c) {
+        if self.next_is(c) {
             self.next_char();
             true
         } else {
@@ -133,12 +145,20 @@ impl<'a> TokenIter<'a> {
         }
     }
 
-    /// Consume characters until the first one for which `pred` is false
-    fn skip_while<F>(&mut self, pred: F)
+    /// Consumes characters while `c` matches the start of source at the cursor.
+    fn skip_while<F>(&mut self, pred: &F)
     where
-        F: Fn(&char) -> bool,
+        F: Fn(char) -> bool,
     {
-        while self.chars.peek().is_some_and(&pred) { self.next_char(); }
+        while self.lookahead(0, pred) { self.next_char(); }
+    }
+
+    /// Consumes characters while `c` _does not_ match the start of source at the cursor.
+    fn skip_until<F>(&mut self, pred: &F)
+    where
+        F: Fn(char) -> bool,
+    {
+        while !self.lookahead(0, pred) { self.next_char(); }
     }
 
     fn create_token(&mut self, token_type: Option<TokenType>) -> Option<Token> {
@@ -192,7 +212,16 @@ impl<'a> TokenIter<'a> {
             Some('/') => {
                 if self.match_next('/') {
                     // Comment: skip until newline
-                    self.skip_while(|next| *next != '\n');
+                    self.skip_until(&|next| next == '\n');
+                    None
+                } else if self.match_next('*') {
+                    // Block comment: skip until block end
+                    while !self.next_is('*') || !self.lookahead(1, &|next| next == '/') {
+                        if self.next_is('\n') { self.line += 1; }
+                        self.next_char();
+                    }
+                    self.next_char();
+                    self.next_char();
                     None
                 } else {
                     Some(TokenType::Slash)
@@ -222,8 +251,8 @@ impl<'a> TokenIter<'a> {
     }
 
     fn scan_string(&mut self) -> Option<TokenType> {
-        while self.chars.peek().is_some_and(|next| *next != '"') {
-            if self.peek_match('\n') { self.line += 1; }
+        while !self.next_is('"') {
+            if self.next_is('\n') { self.line += 1; }
             self.next_char();
         }
 
@@ -234,20 +263,19 @@ impl<'a> TokenIter<'a> {
     }
 
     fn scan_number(&mut self) -> Option<TokenType> {
-        self.skip_while(|next| next.is_ascii_digit());
+        self.skip_while(&|next| next.is_ascii_digit());
 
-        // Slightly hacky two-char lookahead
         let is_digit = |c| c >= '0' && c <= '9';
-        if self.peek_match('.') && self.source[self.cursor + 1..].starts_with(is_digit) {
+        if self.next_is('.') && self.source[self.cursor + 1..].starts_with(is_digit) {
             self.next_char();
-            self.skip_while(|next| next.is_ascii_digit());
+            self.skip_while(&|next| next.is_ascii_digit());
         }
 
         Some(TokenType::Number(self.lexeme().parse().unwrap()))
     }
 
     fn scan_identifier(&mut self) -> Option<TokenType> {
-        self.skip_while(|next| next.is_alphanumeric() || *next == '_');
+        self.skip_while(&|next| next.is_alphanumeric() || next == '_');
         Some(get_word_token(self.lexeme()))
     }
 }
