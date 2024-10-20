@@ -1,3 +1,4 @@
+use crate::rlox::error::{ErrorType, Logger, LoxError};
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 use std::str::Chars;
@@ -92,11 +93,12 @@ pub struct TokenIter<'a> {
     chars: Peekable<Chars<'a>>,
     cursor: usize,
     line: usize,
+    logger: &'a mut Logger,
 }
 
 impl<'a> TokenIter<'a> {
-    pub fn new(source: &'a str) -> Self {
-        Self { source, chars: source.chars().peekable(), cursor: 0, line: 1 }
+    pub fn new(source: &'a str, logger: &'a mut Logger) -> Self {
+        Self { source, chars: source.chars().peekable(), cursor: 0, line: 1, logger }
     }
 
     fn eof(&mut self) -> bool {
@@ -246,7 +248,13 @@ impl<'a> TokenIter<'a> {
             // Identifiers
             Some('a'..='z' | 'A'..='Z' | '_') => self.scan_identifier(),
 
-            _ => None, // TODO: error handling
+            unexpected => {
+                match unexpected {
+                    Some(char) => self.log_error(&format!("Unexpected character '{}'", char)),
+                    None => self.log_error("Unexpected EOF"),
+                };
+                None
+            }
         }
     }
 
@@ -257,7 +265,10 @@ impl<'a> TokenIter<'a> {
         }
 
         match self.next_char() {
-            None => None, // TODO: error handling
+            None => {
+                self.log_error("Unexpected EOF");
+                None
+            }
             Some(_) => Some(TokenType::String(self.source[1..self.cursor - 1].to_string())),
         }
     }
@@ -277,6 +288,10 @@ impl<'a> TokenIter<'a> {
     fn scan_identifier(&mut self) -> Option<TokenType> {
         self.skip_while(&|next| next.is_alphanumeric() || next == '_');
         Some(get_word_token(self.lexeme()))
+    }
+
+    fn log_error(&mut self, message: &str) {
+        self.logger.log(LoxError::new(ErrorType::ScanError, self.line, message));
     }
 }
 
@@ -306,7 +321,7 @@ impl<'a> Scanner<'a> {
         Self { source }
     }
 
-    pub fn iter(&self) -> TokenIter {
-        TokenIter::new(self.source)
+    pub fn iter(&self, logger: &'a mut Logger) -> TokenIter {
+        TokenIter::new(self.source, logger)
     }
 }

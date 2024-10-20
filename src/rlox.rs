@@ -1,5 +1,7 @@
 mod scanner;
+mod error;
 
+use crate::rlox::error::Logger;
 use crate::rlox::scanner::Scanner;
 use std::error::Error;
 use std::fs::File;
@@ -27,7 +29,10 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
         buffer.clear();
         let bytes_read = stdin.read_line(&mut buffer)?;
         if bytes_read == 0 { break; }
-        run(&buffer)?;
+
+        if let Err(error) = run(&buffer) {
+            println!("{}", error);
+        }
     }
 
     Ok(())
@@ -35,10 +40,11 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
 
 fn run(source: &str) -> Result<(), Box<dyn Error>> {
     let scanner = Scanner::new(source);
+    let mut logger = Logger::new();
 
-    for token in scanner.iter() {
+    for token in scanner.iter(&mut logger) {
         println!("{}", token);
     }
 
-    Ok(())
+    logger.result()
 }

@@ -18,6 +18,6 @@ fn main() {
     };
 
     if let Err(error) = result {
-        println!("[{}] {}", "ERR".bold().red(), error);
+        println!("Stopped [{}]:\n{}", "ERROR".bold().red(), error);
     }
 }
