@@ -237,9 +237,25 @@ impl<'a> Scanner<'a> {
     pub fn new(source: &'a str, logger: &'a mut Logger) -> Self {
         Self { source, logger }
     }
+
+    pub fn iter_mut(&'a mut self) -> TokenIter<'a> {
+        self.into_iter()
+    }
 }
 
 impl<'a> IntoIterator for Scanner<'a> {
+    type Item = Token;
+    type IntoIter = TokenIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TokenIter::new(self.source, self.logger)
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b mut Scanner<'a>
+where
+    'b: 'a,
+{
     type Item = Token;
     type IntoIter = TokenIter<'a>;
 

@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     // Single-character tokens
     LeftParen,
@@ -73,8 +73,60 @@ impl TokenType {
             _ => TokenType::Identifier,
         }
     }
+
+    pub fn is_literal(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::Identifier | TokenType::String(_) | TokenType::Number(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_unary_op(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::Bang | TokenType::Minus => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_binary_op(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::EqualEqual | TokenType::BangEqual | TokenType::Less |
+            TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual |
+            TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Slash => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_equality_op(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::EqualEqual | TokenType::BangEqual => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_comparison_op(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::Less | TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_term_op(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::Plus | TokenType::Minus => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_factor_op(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::Star | TokenType::Slash => true,
+            _ => false,
+        }
+    }
 }
 
+#[derive(Debug)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,

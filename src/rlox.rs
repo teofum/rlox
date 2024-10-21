@@ -5,6 +5,7 @@ mod ast;
 mod parser;
 
 use crate::rlox::error::Logger;
+use crate::rlox::parser::Parser;
 use crate::rlox::scanner::Scanner;
 use std::error::Error;
 use std::fs::File;
@@ -42,12 +43,20 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
 }
 
 fn run(source: &str) -> Result<(), Box<dyn Error>> {
-    let mut logger = Logger::new();
+    let mut scan_logger = Logger::new();
+    let mut parse_logger = Logger::new();
 
-    let scanner = Scanner::new(source, &mut logger);
-    for token in scanner {
+    let mut tokens = Scanner::new(source, &mut scan_logger).into_iter();
+    let mut parser = Parser::from(&mut tokens, &mut parse_logger);
+
+    if let Some(expr) = parser.parse() {
+        println!("{}", expr);
+    }
+
+    // Print any leftover tokens
+    for token in tokens {
         println!("{}", token);
     }
 
-    logger.result()
+    Logger::from([scan_logger, parse_logger]).result()
 }

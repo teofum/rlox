@@ -6,6 +6,7 @@ use std::fmt::{Display, Formatter};
 pub enum ErrorType {
     ScanError,
     ParseError,
+    SyntaxError,
     RuntimeError,
 }
 
@@ -56,6 +57,16 @@ pub struct Logger {
 impl Logger {
     pub fn new() -> Self {
         Self { errors: Vec::new() }
+    }
+
+    pub fn from<const N: usize>(loggers: [Logger; N]) -> Self {
+        let mut errors = Vec::new();
+        for logger in loggers {
+            let mut logger = logger;
+            errors.append(&mut logger.errors)
+        }
+
+        Self { errors }
     }
 
     pub fn has_errors(&self) -> bool {
