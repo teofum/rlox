@@ -230,14 +230,20 @@ impl<'a> Iterator for TokenIter<'a> {
 
 pub struct Scanner<'a> {
     source: &'a str,
+    logger: &'a mut Logger,
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(source: &'a str) -> Self {
-        Self { source }
+    pub fn new(source: &'a str, logger: &'a mut Logger) -> Self {
+        Self { source, logger }
     }
+}
 
-    pub fn iter(&self, logger: &'a mut Logger) -> TokenIter {
-        TokenIter::new(self.source, logger)
+impl<'a> IntoIterator for Scanner<'a> {
+    type Item = Token;
+    type IntoIter = TokenIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TokenIter::new(self.source, self.logger)
     }
 }

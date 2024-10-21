@@ -1,6 +1,8 @@
 mod scanner;
 mod error;
 mod token;
+mod ast;
+mod parser;
 
 use crate::rlox::error::Logger;
 use crate::rlox::scanner::Scanner;
@@ -40,10 +42,10 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
 }
 
 fn run(source: &str) -> Result<(), Box<dyn Error>> {
-    let scanner = Scanner::new(source);
     let mut logger = Logger::new();
 
-    for token in scanner.iter(&mut logger) {
+    let scanner = Scanner::new(source, &mut logger);
+    for token in scanner {
         println!("{}", token);
     }
 
