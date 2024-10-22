@@ -42,10 +42,10 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
                     .map(|(lhs, rhs)| Value::Number(lhs * rhs)),
                 TokenType::Plus => match (lhs, rhs) {
                     (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
-                    (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs + &rhs)),
+                    (Value::String(lhs), rhs) => Ok(Value::String(lhs + &to_string(rhs))),
                     (lhs, rhs) => {
                         let message = format!(
-                            "Operator {} expected Number or String, got {:?} and {:?}",
+                            "Operator {} invalid operand combination {:?} and {:?}",
                             op.lexeme, lhs, rhs,
                         );
                         Err(LoxError::new(ErrorType::TypeError, op.line, &message))
@@ -105,5 +105,14 @@ fn compare(op: Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
             );
             Err(LoxError::new(ErrorType::TypeError, op.line, &message))
         }
+    }
+}
+
+fn to_string(value: Value) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Boolean(b) => b.to_string(),
+        Value::Number(num) => num.to_string(),
+        Value::String(str) => str,
     }
 }
