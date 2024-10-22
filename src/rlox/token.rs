@@ -124,6 +124,13 @@ impl TokenType {
             _ => false,
         }
     }
+
+    pub fn is_comma(token_type: &Self) -> bool {
+        match token_type {
+            TokenType::Comma => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -47,7 +47,11 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> Result<Expr> {
-        self.equality()
+        self.comma()
+    }
+
+    fn comma(&mut self) -> Result<Expr> {
+        self.left_associative_binary_op(Self::equality, TokenType::is_comma)
     }
 
     fn equality(&mut self) -> Result<Expr> {
