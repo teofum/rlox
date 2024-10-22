@@ -3,6 +3,7 @@ mod error;
 mod token;
 mod ast;
 mod parser;
+mod eval;
 
 use crate::rlox::error::Logger;
 use crate::rlox::parser::Parser;
@@ -50,7 +51,11 @@ fn run(source: &str) -> Result<(), Box<dyn Error>> {
     let mut parser = Parser::from(&mut tokens, &mut parse_logger);
 
     if let Some(expr) = parser.parse() {
-        println!("{}", expr);
+        print!("{} = ", expr);
+        match eval::eval(expr) {
+            Ok(value) => println!("{}", value),
+            Err(err) => println!("{}", err),
+        }
     }
 
     // Print any leftover tokens

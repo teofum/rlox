@@ -8,6 +8,7 @@ pub enum ErrorType {
     ParseError,
     SyntaxError,
     RuntimeError,
+    TypeError,
 }
 
 #[derive(Debug)]
@@ -25,7 +26,8 @@ impl LoxError {
 
 impl Display for LoxError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let str = format!("{:?} (on line {}): {}", self.error_type, self.line, self.message);
+        let line = if self.line == 0 { String::new() } else { format!(" (on line {})", self.line) };
+        let str = format!("{:?}{}: {}", self.error_type, line, self.message);
         write!(f, "{}", str.red())
     }
 }
@@ -52,6 +54,12 @@ impl Error for LoxErrors {}
 
 pub struct Logger {
     errors: Vec<LoxError>,
+}
+
+impl Default for Logger {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Logger {

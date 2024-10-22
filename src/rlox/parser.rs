@@ -101,8 +101,8 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.next_token() {
             match token.token_type {
                 TokenType::Nil => Ok(Expr::new_literal(Value::Nil)),
-                TokenType::True => Ok(Expr::new_literal(Value::True)),
-                TokenType::False => Ok(Expr::new_literal(Value::False)),
+                TokenType::True => Ok(Expr::new_literal(Value::Boolean(true))),
+                TokenType::False => Ok(Expr::new_literal(Value::Boolean(false))),
                 TokenType::Number(num) => Ok(Expr::new_literal(Value::Number(num))),
                 TokenType::String(str) => Ok(Expr::new_literal(Value::String(str))),
 

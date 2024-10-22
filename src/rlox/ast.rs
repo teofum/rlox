@@ -1,11 +1,10 @@
 use crate::rlox::token::Token;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Value {
     Nil,
-    True,
-    False,
+    Boolean(bool),
     Number(f64),
     String(String),
 }
@@ -14,8 +13,7 @@ impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Nil => write!(f, "nil"),
-            Value::True => write!(f, "true"),
-            Value::False => write!(f, "false"),
+            Value::Boolean(b) => write!(f, "{}", b),
             Value::Number(num) => write!(f, "{}", num),
             Value::String(str) => write!(f, "{}", str),
         }
