@@ -6,14 +6,13 @@ use std::iter::Peekable;
 type Result<T> = std::result::Result<T, LoxError>;
 
 pub struct Parser<'a> {
-    token_buf: Vec<Token>,
     tokens: Peekable<&'a mut dyn Iterator<Item=Token>>,
     logger: &'a mut Logger,
 }
 
 impl<'a> Parser<'a> {
     pub fn from(tokens: &'a mut dyn Iterator<Item=Token>, logger: &'a mut Logger) -> Self {
-        Self { token_buf: Vec::new(), tokens: tokens.peekable(), logger }
+        Self { tokens: tokens.peekable(), logger }
     }
 
     pub fn parse(&mut self) -> Option<Expr> {
@@ -51,7 +50,23 @@ impl<'a> Parser<'a> {
     }
 
     fn comma(&mut self) -> Result<Expr> {
-        self.left_associative_binary_op(Self::equality, TokenType::is_comma)
+        self.left_associative_binary_op(Self::ternary, TokenType::is(TokenType::Comma))
+    }
+
+    /// Parses a ternary operator. Right associative.
+    fn ternary(&mut self) -> Result<Expr> {
+        let mut expr = self.equality()?;
+        while let Some(op) = self.next_token_if(TokenType::is(TokenType::QuestionMark)) {
+            let if_true = self.expression()?;
+            let if_false = match self.next_token_if(|t| *t == TokenType::Colon) {
+                Some(_) => self.ternary(),
+                None => Err(self.error(Some(op), "Expected ':' after expression"))
+            }?;
+
+            expr = Expr::new_ternary(expr, if_true, if_false);
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr> {

@@ -28,6 +28,7 @@ pub enum Expr {
     Grouping(Box<Expr>),
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 impl Display for Expr {
@@ -37,6 +38,7 @@ impl Display for Expr {
             Expr::Grouping(expr) => write!(f, "(group {})", expr),
             Expr::Unary(op, expr) => write!(f, "({} {})", op.lexeme, expr),
             Expr::Binary(left, op, right) => write!(f, "({} {} {})", op.lexeme, left, right),
+            Expr::Ternary(cond, if_true, if_false) => write!(f, "(? {} {} {})", cond, if_true, if_false),
         }
     }
 }
@@ -57,5 +59,9 @@ impl Expr {
 
     pub fn new_binary(expr_left: Expr, op: Token, expr_right: Expr) -> Self {
         Self::Binary(Box::new(expr_left), op, Box::new(expr_right))
+    }
+
+    pub fn new_ternary(expr_cond: Expr, expr_true: Expr, expr_false: Expr) -> Self {
+        Self::Ternary(Box::new(expr_cond), Box::new(expr_true), Box::new(expr_false))
     }
 }

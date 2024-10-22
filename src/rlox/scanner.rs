@@ -1,6 +1,5 @@
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::token::{Token, TokenType};
-use std::fmt::Display;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -97,10 +96,12 @@ impl<'a> TokenIter<'a> {
             Some(')') => Some(TokenType::RightParen),
             Some('{') => Some(TokenType::LeftBrace),
             Some('}') => Some(TokenType::RightBrace),
+            Some(':') => Some(TokenType::Colon),
             Some(',') => Some(TokenType::Comma),
             Some('.') => Some(TokenType::Dot),
             Some('-') => Some(TokenType::Minus),
             Some('+') => Some(TokenType::Plus),
+            Some('?') => Some(TokenType::QuestionMark),
             Some(';') => Some(TokenType::Semicolon),
             Some('*') => Some(TokenType::Star),
 
@@ -192,7 +193,7 @@ impl<'a> TokenIter<'a> {
     fn scan_number(&mut self) -> Option<TokenType> {
         self.skip_while(&|next| next.is_ascii_digit());
 
-        let is_digit = |c| c >= '0' && c <= '9';
+        let is_digit = |c: char| c.is_ascii_digit();
         if self.next_is('.') && self.source[self.cursor + 1..].starts_with(is_digit) {
             self.next_char();
             self.skip_while(&|next| next.is_ascii_digit());

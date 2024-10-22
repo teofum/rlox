@@ -7,10 +7,12 @@ pub enum TokenType {
     RightParen,
     LeftBrace,
     RightBrace,
+    Colon,
     Comma,
     Dot,
     Minus,
     Plus,
+    QuestionMark,
     Semicolon,
     Slash,
     Star,
@@ -75,61 +77,37 @@ impl TokenType {
     }
 
     pub fn is_literal(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::Identifier | TokenType::String(_) | TokenType::Number(_) => true,
-            _ => false,
-        }
+        matches!(token_type, TokenType::Identifier | TokenType::String(_) | TokenType::Number(_))
     }
 
     pub fn is_unary_op(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::Bang | TokenType::Minus => true,
-            _ => false,
-        }
+        matches!(token_type, TokenType::Bang | TokenType::Minus)
     }
 
     pub fn is_binary_op(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::EqualEqual | TokenType::BangEqual | TokenType::Less |
+        matches!(token_type, TokenType::EqualEqual | TokenType::BangEqual | TokenType::Less |
             TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual |
-            TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Slash => true,
-            _ => false,
-        }
+            TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Slash)
     }
 
     pub fn is_equality_op(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::EqualEqual | TokenType::BangEqual => true,
-            _ => false,
-        }
+        matches!(token_type, TokenType::EqualEqual | TokenType::BangEqual)
     }
 
     pub fn is_comparison_op(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::Less | TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual => true,
-            _ => false,
-        }
+        matches!(token_type, TokenType::Less | TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual)
     }
 
     pub fn is_term_op(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::Plus | TokenType::Minus => true,
-            _ => false,
-        }
+        matches!(token_type, TokenType::Plus | TokenType::Minus)
     }
 
     pub fn is_factor_op(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::Star | TokenType::Slash => true,
-            _ => false,
-        }
+        matches!(token_type, TokenType::Star | TokenType::Slash)
     }
 
-    pub fn is_comma(token_type: &Self) -> bool {
-        match token_type {
-            TokenType::Comma => true,
-            _ => false,
-        }
+    pub fn is(pattern: Self) -> impl Fn(&Self) -> bool {
+        move |token_type| *token_type == pattern
     }
 }
 
