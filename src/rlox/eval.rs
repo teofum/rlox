@@ -30,7 +30,7 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
             let lhs = eval(*lhs)?;
             let rhs = eval(*rhs)?;
 
-            match op.token_type {
+            match &op.token_type {
                 TokenType::Comma => Ok(rhs),
                 TokenType::BangEqual => Ok(Value::Boolean(lhs != rhs)),
                 TokenType::EqualEqual => Ok(Value::Boolean(lhs == rhs)),
@@ -51,14 +51,7 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
                         Err(LoxError::new(ErrorType::TypeError, op.line, &message))
                     }
                 }
-                TokenType::Greater => typecheck_numbers((lhs, rhs), op)
-                    .map(|(lhs, rhs)| Value::Boolean(lhs > rhs)),
-                TokenType::GreaterEqual => typecheck_numbers((lhs, rhs), op)
-                    .map(|(lhs, rhs)| Value::Boolean(lhs >= rhs)),
-                TokenType::Less => typecheck_numbers((lhs, rhs), op)
-                    .map(|(lhs, rhs)| Value::Boolean(lhs < rhs)),
-                TokenType::LessEqual => typecheck_numbers((lhs, rhs), op)
-                    .map(|(lhs, rhs)| Value::Boolean(lhs <= rhs)),
+                comp if TokenType::is_comparison_op(&comp) => compare(op, lhs, rhs),
                 _ => panic!("eval: Binary expression with non-binary operator")
             }
         }
@@ -85,5 +78,32 @@ fn typecheck_numbers(values: (Value, Value), op: Token) -> Result<(f64, f64), Lo
             op.lexeme, values.0, values.1,
         );
         Err(LoxError::new(ErrorType::TypeError, op.line, &message))
+    }
+}
+
+fn compare(op: Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
+    fn compare_impl<T>(op: Token, lhs: T, rhs: T) -> Result<Value, LoxError>
+    where
+        T: PartialOrd,
+    {
+        match op.token_type {
+            TokenType::Greater => Ok(Value::Boolean(lhs > rhs)),
+            TokenType::GreaterEqual => Ok(Value::Boolean(lhs >= rhs)),
+            TokenType::Less => Ok(Value::Boolean(lhs < rhs)),
+            TokenType::LessEqual => Ok(Value::Boolean(lhs <= rhs)),
+            _ => panic!("eval/compare: Not a comparison operator")
+        }
+    }
+
+    match (lhs, rhs) {
+        (Value::Number(lhs), Value::Number(rhs)) => compare_impl(op, lhs, rhs),
+        (Value::String(lhs), Value::String(rhs)) => compare_impl(op, lhs, rhs),
+        (lhs, rhs) => {
+            let message = format!(
+                "Operator {} expected Number or String, got {:?} and {:?}",
+                op.lexeme, lhs, rhs,
+            );
+            Err(LoxError::new(ErrorType::TypeError, op.line, &message))
+        }
     }
 }
