@@ -35,11 +35,11 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
                 TokenType::BangEqual => Ok(Value::Boolean(lhs != rhs)),
                 TokenType::EqualEqual => Ok(Value::Boolean(lhs == rhs)),
                 TokenType::Minus => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Number(lhs - rhs))),
+                    .map(|(lhs, rhs)| Value::Number(lhs - rhs)),
                 TokenType::Slash => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Number(lhs / rhs))),
+                    .map(|(lhs, rhs)| Value::Number(lhs / rhs)),
                 TokenType::Star => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Number(lhs * rhs))),
+                    .map(|(lhs, rhs)| Value::Number(lhs * rhs)),
                 TokenType::Plus => match (lhs, rhs) {
                     (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
                     (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs + &rhs)),
@@ -52,13 +52,13 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
                     }
                 }
                 TokenType::Greater => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Boolean(lhs > rhs))),
+                    .map(|(lhs, rhs)| Value::Boolean(lhs > rhs)),
                 TokenType::GreaterEqual => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Boolean(lhs >= rhs))),
+                    .map(|(lhs, rhs)| Value::Boolean(lhs >= rhs)),
                 TokenType::Less => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Boolean(lhs < rhs))),
+                    .map(|(lhs, rhs)| Value::Boolean(lhs < rhs)),
                 TokenType::LessEqual => typecheck_numbers((lhs, rhs), op)
-                    .and_then(|(lhs, rhs)| Ok(Value::Boolean(lhs <= rhs))),
+                    .map(|(lhs, rhs)| Value::Boolean(lhs <= rhs)),
                 _ => panic!("eval: Binary expression with non-binary operator")
             }
         }
