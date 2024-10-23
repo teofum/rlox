@@ -15,6 +15,29 @@ impl<'a> StmtIter<'a> {
         Self { tokens: tokens.peekable(), logger }
     }
 
+    fn stmt_or_declaration(&mut self) -> Result<Stmt> {
+        let result = match self.next_token_if(TokenType::is_declaration) {
+            Some(token) if token.token_type == TokenType::Var => self.var_declaration(),
+            Some(_) => todo!("interpret: Unsupported declaration type"),
+            None => self.statement(),
+        };
+
+        // TODO synchronize
+        result.map_err(|err| err)
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt> {
+        let name = self.expect_token(TokenType::Identifier, 0, "Expected variable name after \"var\"")?;
+
+        let mut initializer = None;
+        if self.next_token_if(TokenType::is(TokenType::Equal)).is_some() {
+            initializer = Some(self.expression()?);
+        }
+
+        self.expect_token(TokenType::Semicolon, name.line, "Expected ';' after statement")?;
+        Ok(Stmt::Var(name, initializer))
+    }
+
     fn statement(&mut self) -> Result<Stmt> {
         if self.next_token_if(TokenType::is(TokenType::Print)).is_some() {
             self.stmt_print()
@@ -58,20 +81,20 @@ impl<'a> StmtIter<'a> {
     }
 
     fn expression(&mut self) -> Result<Expr> {
-        self.comma()
+        self.expr_comma()
     }
 
-    fn comma(&mut self) -> Result<Expr> {
-        self.left_associative_binary_op(Self::ternary, TokenType::is(TokenType::Comma))
+    fn expr_comma(&mut self) -> Result<Expr> {
+        self.left_associative_binary_op(Self::expr_ternary, TokenType::is(TokenType::Comma))
     }
 
     /// Parses a ternary operator. Right associative.
-    fn ternary(&mut self) -> Result<Expr> {
-        let mut expr = self.equality()?;
+    fn expr_ternary(&mut self) -> Result<Expr> {
+        let mut expr = self.expr_equality()?;
         while let Some(op) = self.next_token_if(TokenType::is(TokenType::QuestionMark)) {
             let if_true = self.expression()?;
             self.expect_token(TokenType::Colon, op.line, "Expected ':' after expression")?;
-            let if_false = self.ternary()?;
+            let if_false = self.expr_ternary()?;
 
             expr = Expr::new_ternary(expr, if_true, if_false);
         }
@@ -79,35 +102,35 @@ impl<'a> StmtIter<'a> {
         Ok(expr)
     }
 
-    fn equality(&mut self) -> Result<Expr> {
-        self.left_associative_binary_op(Self::comparison, TokenType::is_equality_op)
+    fn expr_equality(&mut self) -> Result<Expr> {
+        self.left_associative_binary_op(Self::expr_comparison, TokenType::is_equality_op)
     }
 
-    fn comparison(&mut self) -> Result<Expr> {
-        self.left_associative_binary_op(Self::term, TokenType::is_comparison_op)
+    fn expr_comparison(&mut self) -> Result<Expr> {
+        self.left_associative_binary_op(Self::expr_term, TokenType::is_comparison_op)
     }
 
-    fn term(&mut self) -> Result<Expr> {
-        self.left_associative_binary_op(Self::factor, TokenType::is_term_op)
+    fn expr_term(&mut self) -> Result<Expr> {
+        self.left_associative_binary_op(Self::expr_factor, TokenType::is_term_op)
     }
 
-    fn factor(&mut self) -> Result<Expr> {
-        self.left_associative_binary_op(Self::unary, TokenType::is_factor_op)
+    fn expr_factor(&mut self) -> Result<Expr> {
+        self.left_associative_binary_op(Self::expr_unary, TokenType::is_factor_op)
     }
 
     /// Parses a right-associative unary expression.
     /// Highest precedence within non-primary expressions.
-    fn unary(&mut self) -> Result<Expr> {
+    fn expr_unary(&mut self) -> Result<Expr> {
         if let Some(op) = self.next_token_if(TokenType::is_unary_op) {
-            let expr = self.unary()?;
+            let expr = self.expr_unary()?;
             Ok(Expr::new_unary(op, expr))
         } else {
-            self.primary()
+            self.expr_primary()
         }
     }
 
     /// Parses a primary expression.
-    fn primary(&mut self) -> Result<Expr> {
+    fn expr_primary(&mut self) -> Result<Expr> {
         if let Some(token) = self.next_token() {
             match token.token_type {
                 TokenType::Nil => Ok(Expr::new_literal(Value::Nil)),
@@ -115,6 +138,7 @@ impl<'a> StmtIter<'a> {
                 TokenType::False => Ok(Expr::new_literal(Value::Boolean(false))),
                 TokenType::Number(num) => Ok(Expr::new_literal(Value::Number(num))),
                 TokenType::String(str) => Ok(Expr::new_literal(Value::String(str))),
+                TokenType::Identifier => Ok(Expr::Var(token)),
 
                 TokenType::LeftParen => {
                     let expr = self.expression()?;
@@ -167,7 +191,7 @@ impl<'a> StmtIter<'a> {
     }
 
     fn end(&mut self) -> bool {
-        self.tokens.peek().is_some_and(|token| TokenType::is(TokenType::EOF)(&token.token_type))
+        self.tokens.peek().is_some_and(|token| TokenType::is(TokenType::Eof)(&token.token_type))
     }
 
     fn error(&mut self, line: usize, message: &str) -> LoxError {
@@ -181,7 +205,7 @@ impl<'a> Iterator for StmtIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut stmt = None;
         while stmt.is_none() && !self.end() {
-            stmt = match self.statement() {
+            stmt = match self.stmt_or_declaration() {
                 Ok(stmt) => Some(stmt),
                 Err(err) => {
                     self.logger.log(err);

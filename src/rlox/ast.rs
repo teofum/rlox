@@ -1,7 +1,7 @@
 use crate::rlox::token::Token;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Nil,
     Boolean(bool),
@@ -27,6 +27,7 @@ pub enum Expr {
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+    Var(Token),
 }
 
 impl Display for Expr {
@@ -37,6 +38,7 @@ impl Display for Expr {
             Expr::Unary(op, expr) => write!(f, "({} {})", op.lexeme, expr),
             Expr::Binary(left, op, right) => write!(f, "({} {} {})", op.lexeme, left, right),
             Expr::Ternary(cond, if_true, if_false) => write!(f, "(? {} {} {})", cond, if_true, if_false),
+            Expr::Var(identifier) => write!(f, "(var {})", identifier),
         }
     }
 }
@@ -62,10 +64,13 @@ impl Expr {
     pub fn new_ternary(expr_cond: Expr, expr_true: Expr, expr_false: Expr) -> Self {
         Self::Ternary(Box::new(expr_cond), Box::new(expr_true), Box::new(expr_false))
     }
+
+    // TODO get expr line
 }
 
 #[derive(Debug)]
 pub enum Stmt {
     Expression(Expr),
     Print(Expr),
+    Var(Token, Option<Expr>),
 }

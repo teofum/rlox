@@ -5,6 +5,7 @@ mod ast;
 mod parser;
 mod eval;
 mod interpreter;
+mod environment;
 
 use crate::rlox::error::Logger;
 use crate::rlox::interpreter::Interpreter;

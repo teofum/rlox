@@ -50,7 +50,7 @@ pub enum TokenType {
     Print,
     Return,
 
-    EOF,
+    Eof,
 }
 
 impl TokenType {
@@ -104,6 +104,10 @@ impl TokenType {
 
     pub fn is_factor_op(token_type: &Self) -> bool {
         matches!(token_type, TokenType::Star | TokenType::Slash)
+    }
+
+    pub fn is_declaration(token_type: &Self) -> bool {
+        matches!(token_type, TokenType::Var | TokenType::Fun | TokenType::Class)
     }
 
     pub fn is(pattern: Self) -> impl Fn(&Self) -> bool {

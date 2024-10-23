@@ -231,7 +231,7 @@ impl<'a> Iterator for TokenIter<'a> {
             }
             token.or_else(|| {
                 self.eof = true;
-                Some(Token { token_type: TokenType::EOF, lexeme: String::new(), line: self.line })
+                Some(Token { token_type: TokenType::Eof, lexeme: String::new(), line: self.line })
             })
         }
     }
