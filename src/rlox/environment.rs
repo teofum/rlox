@@ -32,9 +32,9 @@ impl Environment {
         self.vars.insert(name.lexeme, value);
     }
 
-    pub fn get(&mut self, name: &Token) -> Result<&mut Value, LoxError> {
-        if let Some(value) = self.vars.get_mut(&name.lexeme) {
-            value.as_mut().ok_or_else(|| {
+    pub fn get(&mut self, name: &Token) -> Result<&Value, LoxError> {
+        if let Some(value) = self.vars.get(&name.lexeme) {
+            value.as_ref().ok_or_else(|| {
                 let message = format!("Variable \"{}\" is uninitialized", name.lexeme);
                 LoxError::new(ErrorType::Runtime, name.line, &message)
             })
@@ -46,7 +46,7 @@ impl Environment {
         }
     }
 
-    pub fn assign(&mut self, name: Token, value: Value) -> Result<&mut Value, LoxError> {
+    pub fn assign(&mut self, name: Token, value: Value) -> Result<&Value, LoxError> {
         if let Entry::Occupied(mut e) = self.vars.entry(name.lexeme.clone()) {
             e.insert(Some(value));
             self.get(&name)

@@ -111,7 +111,7 @@ impl TokenType {
     }
 
     pub fn is_statement_begin(token_type: &Self) -> bool {
-        matches!(token_type, TokenType::Print | TokenType::LeftBrace | TokenType::If)
+        matches!(token_type, TokenType::Print | TokenType::LeftBrace | TokenType::If | TokenType::While)
     }
 
     pub fn is(pattern: Self) -> impl Fn(&Self) -> bool {
@@ -119,7 +119,7 @@ impl TokenType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,

@@ -43,7 +43,8 @@ impl<'a> StmtIter<'a> {
             Some(token) if token.token_type == TokenType::Print => self.stmt_print(),
             Some(token) if token.token_type == TokenType::LeftBrace => self.stmt_block(),
             Some(token) if token.token_type == TokenType::If => self.stmt_if(),
-            Some(_) => todo!("interpret: Unsupported statement type"),
+            Some(token) if token.token_type == TokenType::While => self.stmt_while(),
+            Some(_) => panic!("interpret: Unsupported statement type"),
             None => self.stmt_expression(),
         }
     }
@@ -86,6 +87,16 @@ impl<'a> StmtIter<'a> {
         }
 
         Ok(Stmt::new_if(expr, if_true, if_false))
+    }
+
+    fn stmt_while(&mut self) -> Result<Stmt> {
+        self.expect_token(TokenType::LeftParen, 0, "Expected '(' after while statement")?;
+        let expr = self.expression()?;
+        self.expect_token(TokenType::RightParen, 0, "Expected ')' after condition")?;
+
+        let body = self.statement()?;
+
+        Ok(Stmt::new_while(expr, body))
     }
 
     /// Helper function to parse productions with a binary, left-associative operator.

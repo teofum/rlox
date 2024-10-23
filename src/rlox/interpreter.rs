@@ -20,7 +20,7 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
-        for stmt in stmt_iter {
+        for ref stmt in stmt_iter {
             if let Err(err) = self.execute(stmt) {
                 // Unwind the stack
                 let mut stack_trace = Vec::new();
@@ -35,24 +35,24 @@ impl Interpreter {
         }
     }
 
-    fn execute(&mut self, stmt: Stmt) -> Result<(), LoxError> {
+    fn execute(&mut self, stmt: &Stmt) -> Result<(), LoxError> {
         match stmt {
             Stmt::Expression(expr) => {
-                let value = self.eval(expr)?;
+                let value = self.eval(&expr)?;
                 if self.ctx == RuntimeContext::Interactive {
                     println!("{}", value);
                 }
             }
             Stmt::Print(expr) => {
-                let value = self.eval(expr)?;
+                let value = self.eval(&expr)?;
                 println!("{}", value);
             }
             Stmt::Var(identifier, initializer) => {
                 let value = match initializer {
-                    Some(expr) => Some(self.eval(expr)?),
+                    Some(expr) => Some(self.eval(&expr)?),
                     None => None,
                 };
-                self.env.define(identifier, value);
+                self.env.define(identifier.clone(), value);
             }
             Stmt::Block(statements) => {
                 self.env = Environment::from(std::mem::take(&mut self.env));
@@ -65,9 +65,14 @@ impl Interpreter {
             }
             Stmt::If(expr, if_true, if_false) => {
                 if is_truthy(&self.eval(expr)?) {
-                    self.execute(*if_true)?;
+                    self.execute(if_true)?;
                 } else if let Some(if_false) = if_false {
-                    self.execute(*if_false)?;
+                    self.execute(if_false)?;
+                }
+            }
+            Stmt::While(expr, body) => {
+                while is_truthy(&self.eval(&expr)?) {
+                    self.execute(body.as_ref())?;
                 }
             }
         }
@@ -76,17 +81,17 @@ impl Interpreter {
     }
 
     // TODO: implement reference values
-    pub fn eval(&mut self, expr: Expr) -> Result<Value, LoxError> {
+    pub fn eval(&mut self, expr: &Expr) -> Result<Value, LoxError> {
         match expr {
-            Expr::Literal(value) => Ok(value),
-            Expr::Grouping(expr) => self.eval(*expr),
+            Expr::Literal(value) => Ok(value.clone()),
+            Expr::Grouping(expr) => self.eval(expr),
             Expr::Variable(identifier) => self.env.get(&identifier).cloned(),
             Expr::Assignment(identifier, expr) => {
-                let value = self.eval(*expr)?;
-                self.env.assign(identifier, value).cloned()
+                let value = self.eval(expr)?;
+                self.env.assign(identifier.clone(), value).cloned()
             }
             Expr::Unary(op, rhs) => {
-                let rhs = self.eval(*rhs)?;
+                let rhs = self.eval(rhs)?;
 
                 match op.token_type {
                     TokenType::Bang => Ok(Value::Boolean(!is_truthy(&rhs))),
@@ -106,8 +111,8 @@ impl Interpreter {
                 }
             }
             Expr::Binary(lhs, op, rhs) => {
-                let lhs = self.eval(*lhs)?;
-                let rhs = self.eval(*rhs)?;
+                let lhs = self.eval(lhs)?;
+                let rhs = self.eval(rhs)?;
 
                 match &op.token_type {
                     TokenType::Comma => Ok(rhs),
@@ -135,17 +140,17 @@ impl Interpreter {
                 }
             }
             Expr::Logical(lhs, op, rhs) => {
-                let lhs = self.eval(*lhs)?;
+                let lhs = self.eval(lhs)?;
 
                 match &op.token_type {
-                    TokenType::Or => if is_truthy(&lhs) { Ok(lhs) } else { self.eval(*rhs) },
-                    TokenType::And => if !is_truthy(&lhs) { Ok(lhs) } else { self.eval(*rhs) },
+                    TokenType::Or => if is_truthy(&lhs) { Ok(lhs) } else { self.eval(rhs) },
+                    TokenType::And => if !is_truthy(&lhs) { Ok(lhs) } else { self.eval(rhs) },
                     _ => panic!("eval: Binary expression with non-binary operator")
                 }
             }
             Expr::Ternary(condition, if_true, if_false) => {
-                let condition = self.eval(*condition)?;
-                self.eval(if is_truthy(&condition) { *if_true } else { *if_false })
+                let condition = self.eval(condition)?;
+                self.eval(if is_truthy(&condition) { if_true } else { if_false })
             }
         }
     }
@@ -159,7 +164,7 @@ fn is_truthy(value: &Value) -> bool {
     }
 }
 
-fn typecheck_numbers(values: (Value, Value), op: Token) -> Result<(f64, f64), LoxError> {
+fn typecheck_numbers(values: (Value, Value), op: &Token) -> Result<(f64, f64), LoxError> {
     if let (Value::Number(lhs), Value::Number(rhs)) = values {
         Ok((lhs, rhs))
     } else {
@@ -171,8 +176,8 @@ fn typecheck_numbers(values: (Value, Value), op: Token) -> Result<(f64, f64), Lo
     }
 }
 
-fn compare(op: Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
-    fn compare_impl<T>(op: Token, lhs: T, rhs: T) -> Result<Value, LoxError>
+fn compare(op: &Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
+    fn compare_impl<T>(op: &Token, lhs: T, rhs: T) -> Result<Value, LoxError>
     where
         T: PartialOrd,
     {

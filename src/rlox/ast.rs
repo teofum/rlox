@@ -83,10 +83,15 @@ pub enum Stmt {
     Print(Expr),
     Var(Token, Option<Expr>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>),
 }
 
 impl Stmt {
     pub fn new_if(expr: Expr, if_branch: Stmt, else_branch: Option<Stmt>) -> Self {
         Stmt::If(expr, Box::new(if_branch), else_branch.map(|stmt| Box::new(stmt)))
+    }
+    
+    pub fn new_while(expr: Expr, body: Stmt) -> Self {
+        Stmt::While(expr, Box::new(body))
     }
 }
