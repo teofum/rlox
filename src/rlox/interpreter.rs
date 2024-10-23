@@ -28,7 +28,7 @@ impl Interpreter {
                     self.env = std::mem::take(&mut self.env).enclosing();
                     stack_trace.push("<anonymous block>".to_string());
                 }
-                
+
                 logger.log(err.with_stack(stack_trace));
                 break;
             }
@@ -62,6 +62,13 @@ impl Interpreter {
                 }
 
                 self.env = std::mem::take(&mut self.env).enclosing();
+            }
+            Stmt::If(expr, if_true, if_false) => {
+                if is_truthy(self.eval(expr)?) {
+                    self.execute(*if_true)?;
+                } else if let Some(if_false) = if_false {
+                    self.execute(*if_false)?;
+                }
             }
         }
 

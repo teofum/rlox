@@ -47,10 +47,6 @@ impl Display for Expr {
 
 // Helpers for boxing expressions
 impl Expr {
-    pub fn new_literal(value: Value) -> Self {
-        Self::Literal(value)
-    }
-
     pub fn new_grouping(expr: Expr) -> Self {
         Self::Grouping(Box::new(expr))
     }
@@ -67,10 +63,6 @@ impl Expr {
         Self::Ternary(Box::new(expr_cond), Box::new(expr_true), Box::new(expr_false))
     }
 
-    pub fn new_variable(identifier: Token) -> Self {
-        Self::Variable(identifier)
-    }
-
     pub fn new_assignment(identifier: Token, expr: Expr) -> Self {
         Self::Assignment(identifier, Box::new(expr))
     }
@@ -84,4 +76,11 @@ pub enum Stmt {
     Expression(Expr),
     Print(Expr),
     Var(Token, Option<Expr>),
+    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+}
+
+impl Stmt {
+    pub fn new_if(expr: Expr, if_branch: Stmt, else_branch: Option<Stmt>) -> Self {
+        Stmt::If(expr, Box::new(if_branch), else_branch.map(|stmt| Box::new(stmt)))
+    }
 }
