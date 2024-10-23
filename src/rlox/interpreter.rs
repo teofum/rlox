@@ -3,14 +3,20 @@ use crate::rlox::environment::Environment;
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::token::{Token, TokenType};
 
-#[derive(Default)]
+#[derive(Eq, PartialEq)]
+pub enum RuntimeContext {
+    Script,
+    Interactive,
+}
+
 pub struct Interpreter {
     env: Environment,
+    ctx: RuntimeContext,
 }
 
 impl Interpreter {
-    pub fn new() -> Self {
-        Self { env: Environment::new() }
+    pub fn new(ctx: RuntimeContext) -> Self {
+        Self { env: Environment::new(), ctx }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -31,7 +37,12 @@ impl Interpreter {
 
     fn execute(&mut self, stmt: Stmt) -> Result<(), LoxError> {
         match stmt {
-            Stmt::Expression(expr) => { self.eval(expr)?; }
+            Stmt::Expression(expr) => {
+                let value = self.eval(expr)?;
+                if self.ctx == RuntimeContext::Interactive {
+                    println!("{}", value);
+                }
+            }
             Stmt::Print(expr) => {
                 let value = self.eval(expr)?;
                 println!("{}", value);

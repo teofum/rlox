@@ -7,7 +7,7 @@ mod interpreter;
 mod environment;
 
 use crate::rlox::error::Logger;
-use crate::rlox::interpreter::Interpreter;
+use crate::rlox::interpreter::{Interpreter, RuntimeContext};
 use crate::rlox::parser::Parser;
 use crate::rlox::scanner::Scanner;
 use std::error::Error;
@@ -22,7 +22,7 @@ pub fn run_file(file_path: &str) -> Result<(), Box<dyn Error>> {
     let mut contents = String::new();
     reader.read_to_string(&mut contents)?;
 
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new(RuntimeContext::Script);
     run(&contents, &mut interpreter)
 }
 
@@ -30,7 +30,7 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
     let mut buffer = String::new();
     let stdin = io::stdin();
 
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new(RuntimeContext::Interactive);
     loop {
         print!("> ");
         io::stdout().flush()?;
