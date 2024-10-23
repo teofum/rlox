@@ -39,10 +39,11 @@ impl<'a> StmtIter<'a> {
     }
 
     fn statement(&mut self) -> Result<Stmt> {
-        if self.next_token_if(TokenType::is(TokenType::Print)).is_some() {
-            self.stmt_print()
-        } else {
-            self.stmt_expression()
+        match self.next_token_if(TokenType::is_statement_begin) {
+            Some(token) if token.token_type == TokenType::Print => self.stmt_print(),
+            Some(token) if token.token_type == TokenType::LeftBrace => self.stmt_block(),
+            Some(_) => todo!("interpret: Unsupported statement type"),
+            None => self.stmt_expression(),
         }
     }
 
@@ -58,6 +59,17 @@ impl<'a> StmtIter<'a> {
         self.expect_token(TokenType::Semicolon, 0, "Expected ';' after statement")?;
 
         Ok(Stmt::Print(expr))
+    }
+
+    fn stmt_block(&mut self) -> Result<Stmt> {
+        let mut statements = Vec::new();
+        
+        while self.tokens.peek().is_some_and(|token| token.token_type != TokenType::RightBrace) {
+            statements.push(self.stmt_or_declaration()?);
+        }
+        self.expect_token(TokenType::RightBrace, 0, "Expected '}' after block")?;
+
+        Ok(Stmt::Block(statements))
     }
 
     /// Helper function to parse productions with a binary, left-associative operator.
@@ -81,8 +93,26 @@ impl<'a> StmtIter<'a> {
     }
 
     fn expression(&mut self) -> Result<Expr> {
-        self.expr_comma()
+        self.expr_assignment()
     }
+    
+    fn expr_assignment(&mut self) -> Result<Expr> {
+        let expr = self.expr_comma()?;
+        
+        if let Some(eq) = self.next_token_if(TokenType::is(TokenType::Equal)) {
+            let value = self.expr_assignment()?;
+            
+            if let Expr::Variable(name) = expr { 
+                Ok(Expr::new_assignment(name, value))
+            } else {
+                Err(self.error(eq.line, "Invalid assignment target"))
+            }
+        } else {
+            Ok(expr)
+        }
+        
+    }
+    
 
     fn expr_comma(&mut self) -> Result<Expr> {
         self.left_associative_binary_op(Self::expr_ternary, TokenType::is(TokenType::Comma))
@@ -138,7 +168,7 @@ impl<'a> StmtIter<'a> {
                 TokenType::False => Ok(Expr::new_literal(Value::Boolean(false))),
                 TokenType::Number(num) => Ok(Expr::new_literal(Value::Number(num))),
                 TokenType::String(str) => Ok(Expr::new_literal(Value::String(str))),
-                TokenType::Identifier => Ok(Expr::Var(token)),
+                TokenType::Identifier => Ok(Expr::new_variable(token)),
 
                 TokenType::LeftParen => {
                     let expr = self.expression()?;

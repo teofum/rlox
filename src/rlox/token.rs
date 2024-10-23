@@ -110,6 +110,10 @@ impl TokenType {
         matches!(token_type, TokenType::Var | TokenType::Fun | TokenType::Class)
     }
 
+    pub fn is_statement_begin(token_type: &Self) -> bool {
+        matches!(token_type, TokenType::Print | TokenType::LeftBrace)
+    }
+
     pub fn is(pattern: Self) -> impl Fn(&Self) -> bool {
         move |token_type| *token_type == pattern
     }

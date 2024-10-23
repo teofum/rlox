@@ -3,13 +3,14 @@ use crate::rlox::environment::Environment;
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::token::{Token, TokenType};
 
+#[derive(Default)]
 pub struct Interpreter {
-    global_env: Environment,
+    env: Environment,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { global_env: Environment::new() }
+        Self { env: Environment::new() }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -33,7 +34,16 @@ impl Interpreter {
                     Some(expr) => self.eval(expr)?,
                     None => Value::Nil,
                 };
-                self.global_env.define(identifier.lexeme, value);
+                self.env.define(identifier, value);
+            }
+            Stmt::Block(statements) => {
+                self.env = Environment::from(std::mem::take(&mut self.env));
+
+                for stmt in statements {
+                    self.execute(stmt)?;
+                }
+
+                self.env = std::mem::take(&mut self.env).enclosing();
             }
         }
 
@@ -44,7 +54,11 @@ impl Interpreter {
         match expr {
             Expr::Literal(value) => Ok(value),
             Expr::Grouping(expr) => self.eval(*expr),
-            Expr::Var(identifier) => self.global_env.get(identifier),
+            Expr::Variable(identifier) => self.env.get(&identifier).cloned(),
+            Expr::Assignment(identifier, expr) => {
+                let value = self.eval(*expr)?;
+                self.env.assign(identifier, value)
+            }
             Expr::Unary(op, rhs) => {
                 let rhs = self.eval(*rhs)?;
 

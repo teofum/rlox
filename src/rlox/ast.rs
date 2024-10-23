@@ -27,7 +27,8 @@ pub enum Expr {
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
-    Var(Token),
+    Variable(Token),
+    Assignment(Token, Box<Expr>),
 }
 
 impl Display for Expr {
@@ -38,7 +39,8 @@ impl Display for Expr {
             Expr::Unary(op, expr) => write!(f, "({} {})", op.lexeme, expr),
             Expr::Binary(left, op, right) => write!(f, "({} {} {})", op.lexeme, left, right),
             Expr::Ternary(cond, if_true, if_false) => write!(f, "(? {} {} {})", cond, if_true, if_false),
-            Expr::Var(identifier) => write!(f, "(var {})", identifier),
+            Expr::Variable(identifier) => write!(f, "(var {})", identifier),
+            Expr::Assignment(identifier, expr) => write!(f, "(= {} {})", identifier, expr),
         }
     }
 }
@@ -65,11 +67,20 @@ impl Expr {
         Self::Ternary(Box::new(expr_cond), Box::new(expr_true), Box::new(expr_false))
     }
 
+    pub fn new_variable(identifier: Token) -> Self {
+        Self::Variable(identifier)
+    }
+
+    pub fn new_assignment(identifier: Token, expr: Expr) -> Self {
+        Self::Assignment(identifier, Box::new(expr))
+    }
+
     // TODO get expr line
 }
 
 #[derive(Debug)]
 pub enum Stmt {
+    Block(Vec<Stmt>),
     Expression(Expr),
     Print(Expr),
     Var(Token, Option<Expr>),
