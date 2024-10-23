@@ -57,6 +57,7 @@ impl Interpreter {
         Ok(())
     }
 
+    // TODO: implement reference values
     pub fn eval(&mut self, expr: Expr) -> Result<Value, LoxError> {
         match expr {
             Expr::Literal(value) => Ok(value),
@@ -64,7 +65,7 @@ impl Interpreter {
             Expr::Variable(identifier) => self.env.get(&identifier).cloned(),
             Expr::Assignment(identifier, expr) => {
                 let value = self.eval(*expr)?;
-                self.env.assign(identifier, value)
+                self.env.assign(identifier, value).cloned()
             }
             Expr::Unary(op, rhs) => {
                 let rhs = self.eval(*rhs)?;

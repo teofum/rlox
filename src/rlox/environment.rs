@@ -1,6 +1,7 @@
 use crate::rlox::ast::Value;
 use crate::rlox::error::{ErrorType, LoxError};
 use crate::rlox::token::Token;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -17,7 +18,7 @@ impl Environment {
     pub fn from(enclosing: Environment) -> Self {
         Self { vars: HashMap::new(), enclosing: Some(Box::new(enclosing)) }
     }
-    
+
     pub fn is_global(&self) -> bool {
         self.enclosing.is_none()
     }
@@ -31,10 +32,10 @@ impl Environment {
         self.vars.insert(name.lexeme, value);
     }
 
-    pub fn get(&self, name: &Token) -> Result<&Value, LoxError> {
-        if let Some(value) = self.vars.get(&name.lexeme) {
+    pub fn get(&mut self, name: &Token) -> Result<&mut Value, LoxError> {
+        if let Some(value) = self.vars.get_mut(&name.lexeme) {
             Ok(value)
-        } else if let Some(enclosing) = &self.enclosing {
+        } else if let Some(enclosing) = &mut self.enclosing {
             enclosing.get(name)
         } else {
             let message = format!("Variable \"{}\" is undefined", name.lexeme);
@@ -42,11 +43,10 @@ impl Environment {
         }
     }
 
-    #[allow(clippy::map_entry)]
-    pub fn assign(&mut self, name: Token, value: Value) -> Result<Value, LoxError> {
-        if self.vars.contains_key(&name.lexeme) {
-            self.vars.insert(name.lexeme, value.clone());
-            Ok(value)
+    pub fn assign(&mut self, name: Token, value: Value) -> Result<&mut Value, LoxError> {
+        if let Entry::Occupied(mut e) = self.vars.entry(name.lexeme.clone()) {
+            e.insert(value);
+            self.get(&name)
         } else if let Some(enclosing) = &mut self.enclosing {
             enclosing.assign(name, value)
         } else {
