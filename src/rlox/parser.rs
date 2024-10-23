@@ -77,14 +77,14 @@ impl<'a> StmtIter<'a> {
         self.expect_token(TokenType::LeftParen, 0, "Expected '(' after if statement")?;
         let expr = self.expression()?;
         self.expect_token(TokenType::RightParen, 0, "Expected ')' after condition")?;
-        
+
         let if_true = self.statement()?;
-        
+
         let mut if_false = None;
         if self.next_token_if(TokenType::is(TokenType::Else)).is_some() {
             if_false = Some(self.statement()?);
         }
-        
+
         Ok(Stmt::new_if(expr, if_true, if_false))
     }
 
@@ -113,7 +113,7 @@ impl<'a> StmtIter<'a> {
     }
 
     fn expr_assignment(&mut self) -> Result<Expr> {
-        let expr = self.expr_comma()?;
+        let expr = self.expr_logic_or()?;
 
         if let Some(eq) = self.next_token_if(TokenType::is(TokenType::Equal)) {
             let value = self.expr_assignment()?;
@@ -128,6 +128,25 @@ impl<'a> StmtIter<'a> {
         }
     }
 
+    fn expr_logic_or(&mut self) -> Result<Expr> {
+        let mut expr = self.expr_logic_and()?;
+        while let Some(op) = self.next_token_if(TokenType::is(TokenType::Or)) {
+            let right = self.expr_logic_and()?;
+            expr = Expr::new_logical(expr, op, right);
+        }
+
+        Ok(expr)
+    }
+
+    fn expr_logic_and(&mut self) -> Result<Expr> {
+        let mut expr = self.expr_comma()?;
+        while let Some(op) = self.next_token_if(TokenType::is(TokenType::And)) {
+            let right = self.expr_comma()?;
+            expr = Expr::new_logical(expr, op, right);
+        }
+
+        Ok(expr)
+    }
 
     fn expr_comma(&mut self) -> Result<Expr> {
         self.left_associative_binary_op(Self::expr_ternary, TokenType::is(TokenType::Comma))

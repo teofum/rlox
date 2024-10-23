@@ -64,7 +64,7 @@ impl Interpreter {
                 self.env = std::mem::take(&mut self.env).enclosing();
             }
             Stmt::If(expr, if_true, if_false) => {
-                if is_truthy(self.eval(expr)?) {
+                if is_truthy(&self.eval(expr)?) {
                     self.execute(*if_true)?;
                 } else if let Some(if_false) = if_false {
                     self.execute(*if_false)?;
@@ -89,7 +89,7 @@ impl Interpreter {
                 let rhs = self.eval(*rhs)?;
 
                 match op.token_type {
-                    TokenType::Bang => Ok(Value::Boolean(!is_truthy(rhs))),
+                    TokenType::Bang => Ok(Value::Boolean(!is_truthy(&rhs))),
                     TokenType::Minus => {
                         match rhs {
                             Value::Number(x) => Ok(Value::Number(-x)),
@@ -134,18 +134,27 @@ impl Interpreter {
                     _ => panic!("eval: Binary expression with non-binary operator")
                 }
             }
+            Expr::Logical(lhs, op, rhs) => {
+                let lhs = self.eval(*lhs)?;
+
+                match &op.token_type {
+                    TokenType::Or => if is_truthy(&lhs) { Ok(lhs) } else { self.eval(*rhs) },
+                    TokenType::And => if !is_truthy(&lhs) { Ok(lhs) } else { self.eval(*rhs) },
+                    _ => panic!("eval: Binary expression with non-binary operator")
+                }
+            }
             Expr::Ternary(condition, if_true, if_false) => {
                 let condition = self.eval(*condition)?;
-                self.eval(if is_truthy(condition) { *if_true } else { *if_false })
+                self.eval(if is_truthy(&condition) { *if_true } else { *if_false })
             }
         }
     }
 }
 
-fn is_truthy(value: Value) -> bool {
+fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Nil => false,
-        Value::Boolean(b) => b,
+        Value::Boolean(b) => *b,
         _ => true,
     }
 }

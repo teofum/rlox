@@ -29,6 +29,7 @@ pub enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Variable(Token),
     Assignment(Token, Box<Expr>),
+    Logical(Box<Expr>, Token, Box<Expr>),
 }
 
 impl Display for Expr {
@@ -37,7 +38,8 @@ impl Display for Expr {
             Expr::Literal(value) => write!(f, "{}", value),
             Expr::Grouping(expr) => write!(f, "(group {})", expr),
             Expr::Unary(op, expr) => write!(f, "({} {})", op.lexeme, expr),
-            Expr::Binary(left, op, right) => write!(f, "({} {} {})", op.lexeme, left, right),
+            Expr::Binary(left, op, right) | Expr::Logical(left, op, right) =>
+                write!(f, "({} {} {})", op.lexeme, left, right),
             Expr::Ternary(cond, if_true, if_false) => write!(f, "(? {} {} {})", cond, if_true, if_false),
             Expr::Variable(identifier) => write!(f, "(var {})", identifier),
             Expr::Assignment(identifier, expr) => write!(f, "(= {} {})", identifier, expr),
@@ -65,6 +67,10 @@ impl Expr {
 
     pub fn new_assignment(identifier: Token, expr: Expr) -> Self {
         Self::Assignment(identifier, Box::new(expr))
+    }
+
+    pub fn new_logical(expr_left: Expr, op: Token, expr_right: Expr) -> Self {
+        Self::Logical(Box::new(expr_left), op, Box::new(expr_right))
     }
 
     // TODO get expr line
