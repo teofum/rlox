@@ -44,6 +44,7 @@ impl<'a> StmtIter<'a> {
             Some(token) if token.token_type == TokenType::LeftBrace => self.stmt_block(),
             Some(token) if token.token_type == TokenType::If => self.stmt_if(),
             Some(token) if token.token_type == TokenType::While => self.stmt_while(),
+            Some(token) if token.token_type == TokenType::For => self.stmt_for(),
             Some(_) => panic!("interpret: Unsupported statement type"),
             None => self.stmt_expression(),
         }
@@ -97,6 +98,46 @@ impl<'a> StmtIter<'a> {
         let body = self.statement()?;
 
         Ok(Stmt::new_while(expr, body))
+    }
+
+    fn stmt_for(&mut self) -> Result<Stmt> {
+        self.expect_token(TokenType::LeftParen, 0, "Expected '(' after for statement")?;
+
+        let init = if self.next_token_if(TokenType::is(TokenType::Semicolon)).is_some() {
+            None
+        } else if self.next_token_if(TokenType::is(TokenType::Var)).is_some() {
+            Some(self.var_declaration()?)
+        } else {
+            Some(self.stmt_expression()?)
+        };
+
+        let condition = if self.next_token_if(TokenType::is(TokenType::Semicolon)).is_some() {
+            None
+        } else {
+            let cond = self.expression()?;
+            self.expect_token(TokenType::Semicolon, 0, "Expected ';' after condition")?;
+            Some(cond)
+        };
+
+        let increment = if self.next_token_if(TokenType::is(TokenType::RightParen)).is_some() {
+            None
+        } else {
+            let inc = self.expression()?;
+            self.expect_token(TokenType::RightParen, 0, "Expected ')' after expression")?;
+            Some(inc)
+        };
+
+        let body = self.statement()?;
+        let mut statements = Vec::from([body]);
+        if let Some(increment) = increment { statements.push(Stmt::Expression(increment)); }
+        let body = Stmt::Block(statements);
+
+        let condition = condition.unwrap_or(Expr::Literal(Value::Boolean(true)));
+        let mut statements = Vec::new();
+        if let Some(init) = init { statements.push(init); }
+        statements.push(Stmt::new_while(condition, body));
+
+        Ok(Stmt::Block(statements))
     }
 
     /// Helper function to parse productions with a binary, left-associative operator.

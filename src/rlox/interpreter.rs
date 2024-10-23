@@ -37,19 +37,14 @@ impl Interpreter {
 
     fn execute(&mut self, stmt: &Stmt) -> Result<(), LoxError> {
         match stmt {
-            Stmt::Expression(expr) => {
-                let value = self.eval(&expr)?;
-                if self.ctx == RuntimeContext::Interactive {
-                    println!("{}", value);
-                }
-            }
+            Stmt::Expression(expr) => { let value = self.eval(expr)?; }
             Stmt::Print(expr) => {
-                let value = self.eval(&expr)?;
+                let value = self.eval(expr)?;
                 println!("{}", value);
             }
             Stmt::Var(identifier, initializer) => {
                 let value = match initializer {
-                    Some(expr) => Some(self.eval(&expr)?),
+                    Some(expr) => Some(self.eval(expr)?),
                     None => None,
                 };
                 self.env.define(identifier.clone(), value);
@@ -71,7 +66,7 @@ impl Interpreter {
                 }
             }
             Stmt::While(expr, body) => {
-                while is_truthy(&self.eval(&expr)?) {
+                while is_truthy(&self.eval(expr)?) {
                     self.execute(body.as_ref())?;
                 }
             }
@@ -85,7 +80,7 @@ impl Interpreter {
         match expr {
             Expr::Literal(value) => Ok(value.clone()),
             Expr::Grouping(expr) => self.eval(expr),
-            Expr::Variable(identifier) => self.env.get(&identifier).cloned(),
+            Expr::Variable(identifier) => self.env.get(identifier).cloned(),
             Expr::Assignment(identifier, expr) => {
                 let value = self.eval(expr)?;
                 self.env.assign(identifier.clone(), value).cloned()
