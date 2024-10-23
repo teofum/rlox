@@ -49,8 +49,8 @@ impl Interpreter {
             }
             Stmt::Var(identifier, initializer) => {
                 let value = match initializer {
-                    Some(expr) => self.eval(expr)?,
-                    None => Value::Nil,
+                    Some(expr) => Some(self.eval(expr)?),
+                    None => None,
                 };
                 self.env.define(identifier, value);
             }

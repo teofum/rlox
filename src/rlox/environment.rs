@@ -7,7 +7,7 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub struct Environment {
     enclosing: Option<Box<Environment>>,
-    vars: HashMap<String, Value>,
+    vars: HashMap<String, Option<Value>>,
 }
 
 impl Environment {
@@ -27,14 +27,17 @@ impl Environment {
         *self.enclosing.expect("Environment: attempted to drop the global env!")
     }
 
-    pub fn define(&mut self, name: Token, value: Value) {
+    pub fn define(&mut self, name: Token, value: Option<Value>) {
         // If we had warnings, we should at least warn on redefinition
         self.vars.insert(name.lexeme, value);
     }
 
     pub fn get(&mut self, name: &Token) -> Result<&mut Value, LoxError> {
         if let Some(value) = self.vars.get_mut(&name.lexeme) {
-            Ok(value)
+            value.as_mut().ok_or_else(|| {
+                let message = format!("Variable \"{}\" is uninitialized", name.lexeme);
+                LoxError::new(ErrorType::Runtime, name.line, &message)
+            })
         } else if let Some(enclosing) = &mut self.enclosing {
             enclosing.get(name)
         } else {
@@ -45,7 +48,7 @@ impl Environment {
 
     pub fn assign(&mut self, name: Token, value: Value) -> Result<&mut Value, LoxError> {
         if let Entry::Occupied(mut e) = self.vars.entry(name.lexeme.clone()) {
-            e.insert(value);
+            e.insert(Some(value));
             self.get(&name)
         } else if let Some(enclosing) = &mut self.enclosing {
             enclosing.assign(name, value)
