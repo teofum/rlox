@@ -16,18 +16,30 @@ pub struct LoxError {
     error_type: ErrorType,
     line: usize,
     message: String,
+    stack_trace: Option<Vec<String>>,
 }
 
 impl LoxError {
     pub fn new(error_type: ErrorType, line: usize, message: &str) -> Self {
-        Self { error_type, line, message: message.to_string() }
+        Self { error_type, line, message: message.to_string(), stack_trace: None }
+    }
+    
+    pub fn with_stack(self, stack: Vec<String>) -> Self {
+        Self { error_type: self.error_type, line: self.line, message: self.message, stack_trace: Some(stack) }
     }
 }
 
 impl Display for LoxError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let line = if self.line == 0 { String::new() } else { format!(" (on line {})", self.line) };
-        let str = format!("{:?}Error{}: {}", self.error_type, line, self.message);
+        let mut str = format!("{:?}Error{}: {}", self.error_type, line, self.message);
+        if let Some(stack) = &self.stack_trace {
+            for item in stack {
+                let message = format!("\n\tin {}", item);
+                str += &message;
+            } 
+        }
+        
         write!(f, "{}", str.red())
     }
 }

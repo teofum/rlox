@@ -17,6 +17,10 @@ impl Environment {
     pub fn from(enclosing: Environment) -> Self {
         Self { vars: HashMap::new(), enclosing: Some(Box::new(enclosing)) }
     }
+    
+    pub fn is_global(&self) -> bool {
+        self.enclosing.is_none()
+    }
 
     pub fn enclosing(self) -> Self {
         *self.enclosing.expect("Environment: attempted to drop the global env!")

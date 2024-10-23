@@ -16,7 +16,14 @@ impl Interpreter {
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
         for stmt in stmt_iter {
             if let Err(err) = self.execute(stmt) {
-                logger.log(err);
+                // Unwind the stack
+                let mut stack_trace = Vec::new();
+                while !self.env.is_global() {
+                    self.env = std::mem::take(&mut self.env).enclosing();
+                    stack_trace.push("<anonymous block>".to_string());
+                }
+                
+                logger.log(err.with_stack(stack_trace));
                 break;
             }
         }
