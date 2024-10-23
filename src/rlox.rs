@@ -3,7 +3,6 @@ mod error;
 mod token;
 mod ast;
 mod parser;
-mod eval;
 mod interpreter;
 mod environment;
 
