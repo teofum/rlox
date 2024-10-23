@@ -5,19 +5,24 @@ use std::str::Chars;
 
 pub struct TokenIter<'a> {
     source: &'a str,
+    logger: &'a mut Logger,
+
     chars: Peekable<Chars<'a>>,
     cursor: usize,
     line: usize,
-    logger: &'a mut Logger,
+    eof: bool,
 }
 
 impl<'a> TokenIter<'a> {
     pub fn new(source: &'a str, logger: &'a mut Logger) -> Self {
-        Self { source, chars: source.chars().peekable(), cursor: 0, line: 1, logger }
-    }
-
-    fn eof(&mut self) -> bool {
-        self.chars.peek().is_none()
+        Self {
+            source,
+            logger,
+            chars: source.chars().peekable(),
+            cursor: 0,
+            line: 1,
+            eof: false,
+        }
     }
 
     fn lexeme(&self) -> &'a str {
@@ -208,7 +213,7 @@ impl<'a> TokenIter<'a> {
     }
 
     fn log_error(&mut self, message: &str) {
-        self.logger.log(LoxError::new(ErrorType::ScanError, self.line, message));
+        self.logger.log(LoxError::new(ErrorType::Scanner, self.line, message));
     }
 }
 
@@ -216,15 +221,18 @@ impl<'a> Iterator for TokenIter<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.eof() {
+        if self.eof {
             None
         } else {
             let mut token = None;
-            while token.is_none() && !self.eof() {
+            while token.is_none() && self.chars.peek().is_some() {
                 let token_type = self.scan_token();
                 token = self.create_token(token_type);
             }
-            token
+            token.or_else(|| {
+                self.eof = true;
+                Some(Token { token_type: TokenType::EOF, lexeme: String::new(), line: self.line })
+            })
         }
     }
 }

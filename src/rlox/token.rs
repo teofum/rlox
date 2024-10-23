@@ -50,7 +50,7 @@ pub enum TokenType {
     Print,
     Return,
 
-    // EOF, // Unused
+    EOF,
 }
 
 impl TokenType {

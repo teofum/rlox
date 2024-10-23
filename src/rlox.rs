@@ -4,8 +4,10 @@ mod token;
 mod ast;
 mod parser;
 mod eval;
+mod interpreter;
 
 use crate::rlox::error::Logger;
+use crate::rlox::interpreter::Interpreter;
 use crate::rlox::parser::Parser;
 use crate::rlox::scanner::Scanner;
 use std::error::Error;
@@ -20,13 +22,15 @@ pub fn run_file(file_path: &str) -> Result<(), Box<dyn Error>> {
     let mut contents = String::new();
     reader.read_to_string(&mut contents)?;
 
-    run(&contents)
+    let mut interpreter = Interpreter::new();
+    run(&contents, &mut interpreter)
 }
 
 pub fn run_prompt() -> Result<(), Box<dyn Error>> {
     let mut buffer = String::new();
     let stdin = io::stdin();
 
+    let mut interpreter = Interpreter::new();
     loop {
         print!("> ");
         io::stdout().flush()?;
@@ -35,7 +39,7 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
         let bytes_read = stdin.read_line(&mut buffer)?;
         if bytes_read == 0 { break; }
 
-        if let Err(error) = run(&buffer) {
+        if let Err(error) = run(&buffer, &mut interpreter) {
             println!("{}", error);
         }
     }
@@ -43,25 +47,14 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run(source: &str) -> Result<(), Box<dyn Error>> {
+fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), Box<dyn Error>> {
     let mut scan_logger = Logger::new();
     let mut parse_logger = Logger::new();
+    let mut runtime_logger = Logger::new();
 
     let mut tokens = Scanner::new(source, &mut scan_logger).into_iter();
-    let mut parser = Parser::from(&mut tokens, &mut parse_logger);
+    let parser = Parser::new(&mut tokens, &mut parse_logger);
+    interpreter.interpret(&mut parser.into_iter(), &mut runtime_logger);
 
-    if let Some(expr) = parser.parse() {
-        print!("{} = ", expr);
-        match eval::eval(expr) {
-            Ok(value) => println!("{}", value),
-            Err(err) => println!("{}", err),
-        }
-    }
-
-    // Print any leftover tokens
-    for token in tokens {
-        println!("{}", token);
-    }
-
-    Logger::from([scan_logger, parse_logger]).result()
+    Logger::from([scan_logger, parse_logger, runtime_logger]).result()
 }

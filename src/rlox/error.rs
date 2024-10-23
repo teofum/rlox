@@ -4,11 +4,11 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum ErrorType {
-    ScanError,
-    ParseError,
-    SyntaxError,
-    RuntimeError,
-    TypeError,
+    Scanner,
+    Parser,
+    Syntax,
+    Runtime,
+    Type,
 }
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl LoxError {
 impl Display for LoxError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let line = if self.line == 0 { String::new() } else { format!(" (on line {})", self.line) };
-        let str = format!("{:?}{}: {}", self.error_type, line, self.message);
+        let str = format!("{:?}Error{}: {}", self.error_type, line, self.message);
         write!(f, "{}", str.red())
     }
 }

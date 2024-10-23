@@ -1,28 +1,40 @@
-use crate::rlox::ast::{Expr, Value};
+use crate::rlox::ast::{Expr, Stmt, Value};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::token::{Token, TokenType};
 use std::iter::Peekable;
 
 type Result<T> = std::result::Result<T, LoxError>;
 
-pub struct Parser<'a> {
+pub struct StmtIter<'a> {
     tokens: Peekable<&'a mut dyn Iterator<Item=Token>>,
     logger: &'a mut Logger,
 }
 
-impl<'a> Parser<'a> {
-    pub fn from(tokens: &'a mut dyn Iterator<Item=Token>, logger: &'a mut Logger) -> Self {
+impl<'a> StmtIter<'a> {
+    pub fn new(tokens: &'a mut dyn Iterator<Item=Token>, logger: &'a mut Logger) -> Self {
         Self { tokens: tokens.peekable(), logger }
     }
 
-    pub fn parse(&mut self) -> Option<Expr> {
-        match self.expression() {
-            Ok(expr) => Some(expr),
-            Err(err) => {
-                self.logger.log(err);
-                None
-            }
+    fn statement(&mut self) -> Result<Stmt> {
+        if self.next_token_if(TokenType::is(TokenType::Print)).is_some() {
+            self.stmt_print()
+        } else {
+            self.stmt_expression()
         }
+    }
+
+    fn stmt_expression(&mut self) -> Result<Stmt> {
+        let expr = self.expression()?;
+        self.expect_token(TokenType::Semicolon, 0, "Expected ';' after statement")?;
+
+        Ok(Stmt::Expression(expr))
+    }
+
+    fn stmt_print(&mut self) -> Result<Stmt> {
+        let expr = self.expression()?;
+        self.expect_token(TokenType::Semicolon, 0, "Expected ';' after statement")?;
+
+        Ok(Stmt::Print(expr))
     }
 
     /// Helper function to parse productions with a binary, left-associative operator.
@@ -58,10 +70,8 @@ impl<'a> Parser<'a> {
         let mut expr = self.equality()?;
         while let Some(op) = self.next_token_if(TokenType::is(TokenType::QuestionMark)) {
             let if_true = self.expression()?;
-            let if_false = match self.next_token_if(|t| *t == TokenType::Colon) {
-                Some(_) => self.ternary(),
-                None => Err(self.error(Some(op), "Expected ':' after expression"))
-            }?;
+            self.expect_token(TokenType::Colon, op.line, "Expected ':' after expression")?;
+            let if_false = self.ternary()?;
 
             expr = Expr::new_ternary(expr, if_true, if_false);
         }
@@ -108,16 +118,14 @@ impl<'a> Parser<'a> {
 
                 TokenType::LeftParen => {
                     let expr = self.expression()?;
-                    match self.next_token_if(|t| *t == TokenType::RightParen) {
-                        Some(_) => Ok(Expr::new_grouping(expr)),
-                        None => Err(self.error(Some(token), "Expected ')' after expression"))
-                    }
+                    self.expect_token(TokenType::RightParen, token.line, "Expected ')' after expression")
+                        .map(|_| Expr::new_grouping(expr))
                 }
 
-                _ => Err(self.error(Some(token), "Expected expression")),
+                _ => Err(self.error(token.line, "Expected expression")),
             }
         } else {
-            Err(self.error(None, "Expected expression"))
+            Err(self.error(0, "Expected expression"))
         }
     }
 
@@ -138,12 +146,85 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn end(&mut self) -> bool {
-        self.tokens.peek().is_none()
+    /// Consumes the next available token and returns it only if `pred` is true for that token.
+    /// Returns an error if there are no tokens, or if `pred` is false.
+    fn expect<F>(&mut self, pred: F, line: usize, message: &str) -> Result<Token>
+    where
+        F: Fn(&TokenType) -> bool,
+    {
+        match self.next_token_if(pred) {
+            Some(token) => Ok(token),
+            None => Err(self.error(line, message))
+        }
     }
 
-    fn error(&mut self, token: Option<Token>, message: &str) -> LoxError {
-        let line = token.map_or(0, |t| t.line);
-        LoxError::new(ErrorType::SyntaxError, line, message)
+    /// Consumes the next available token and returns it only if it matches the provided token.
+    /// Returns an error if there are no tokens, or if the next token does not match.
+    ///
+    /// Shorthand for calling `expect` with `TokenType::is`.
+    fn expect_token(&mut self, token: TokenType, line: usize, message: &str) -> Result<Token> {
+        self.expect(TokenType::is(token), line, message)
+    }
+
+    fn end(&mut self) -> bool {
+        self.tokens.peek().is_some_and(|token| TokenType::is(TokenType::EOF)(&token.token_type))
+    }
+
+    fn error(&mut self, line: usize, message: &str) -> LoxError {
+        LoxError::new(ErrorType::Syntax, line, message)
+    }
+}
+
+impl<'a> Iterator for StmtIter<'a> {
+    type Item = Stmt;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut stmt = None;
+        while stmt.is_none() && !self.end() {
+            stmt = match self.statement() {
+                Ok(stmt) => Some(stmt),
+                Err(err) => {
+                    self.logger.log(err);
+                    None
+                }
+            }
+        }
+        stmt
+    }
+}
+
+pub struct Parser<'a> {
+    tokens: &'a mut dyn Iterator<Item=Token>,
+    logger: &'a mut Logger,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(tokens: &'a mut dyn Iterator<Item=Token>, logger: &'a mut Logger) -> Self {
+        Self { tokens, logger }
+    }
+
+    pub fn iter_mut(&'a mut self) -> StmtIter<'a> {
+        self.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for Parser<'a> {
+    type Item = Stmt;
+    type IntoIter = StmtIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        StmtIter::new(self.tokens, self.logger)
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b mut Parser<'a>
+where
+    'b: 'a,
+{
+    type Item = Stmt;
+    type IntoIter = StmtIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        StmtIter::new(self.tokens, self.logger)
     }
 }

@@ -63,3 +63,9 @@ impl Expr {
         Self::Ternary(Box::new(expr_cond), Box::new(expr_true), Box::new(expr_false))
     }
 }
+
+#[derive(Debug)]
+pub enum Stmt {
+    Expression(Expr),
+    Print(Expr),
+}

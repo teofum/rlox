@@ -19,7 +19,7 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
                                 "Operator {} expected Number, got {:?}",
                                 op.lexeme, value,
                             );
-                            Err(LoxError::new(ErrorType::TypeError, op.line, &message))
+                            Err(LoxError::new(ErrorType::Type, op.line, &message))
                         }
                     }
                 }
@@ -48,7 +48,7 @@ pub fn eval(expr: Expr) -> Result<Value, LoxError> {
                             "Operator {} invalid operand combination {:?} and {:?}",
                             op.lexeme, lhs, rhs,
                         );
-                        Err(LoxError::new(ErrorType::TypeError, op.line, &message))
+                        Err(LoxError::new(ErrorType::Type, op.line, &message))
                     }
                 }
                 comp if TokenType::is_comparison_op(&comp) => compare(op, lhs, rhs),
@@ -77,7 +77,7 @@ fn typecheck_numbers(values: (Value, Value), op: Token) -> Result<(f64, f64), Lo
             "Operator {} expected Number and Number, got {:?} and {:?}",
             op.lexeme, values.0, values.1,
         );
-        Err(LoxError::new(ErrorType::TypeError, op.line, &message))
+        Err(LoxError::new(ErrorType::Type, op.line, &message))
     }
 }
 
@@ -103,7 +103,7 @@ fn compare(op: Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
                 "Operator {} expected Number or String, got {:?} and {:?}",
                 op.lexeme, lhs, rhs,
             );
-            Err(LoxError::new(ErrorType::TypeError, op.line, &message))
+            Err(LoxError::new(ErrorType::Type, op.line, &message))
         }
     }
 }
