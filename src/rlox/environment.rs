@@ -27,9 +27,9 @@ impl Environment {
         *self.enclosing.expect("Environment: attempted to drop the global env!")
     }
 
-    pub fn define(&mut self, name: Token, value: Option<Value>) {
+    pub fn define(&mut self, name: String, value: Option<Value>) {
         // If we had warnings, we should at least warn on redefinition
-        self.vars.insert(name.lexeme, value);
+        self.vars.insert(name, value);
     }
 
     pub fn get(&mut self, name: &Token) -> Result<&Value, LoxError> {

@@ -1,6 +1,7 @@
 use crate::rlox::ast::{Expr, Stmt, Value};
 use crate::rlox::environment::Environment;
 use crate::rlox::error::{ErrorType, Logger, LoxError};
+use crate::rlox::externals;
 use crate::rlox::token::{Token, TokenType};
 
 #[derive(Eq, PartialEq)]
@@ -16,7 +17,14 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new(ctx: RuntimeContext) -> Self {
-        Self { env: Environment::new(), ctx }
+        let mut interpreter = Self { env: Environment::new(), ctx };
+        interpreter.env.define("clock".to_string(), Some(Value::Fun {
+            name: "clock".to_string(),
+            arity: 0,
+            f: externals::clock,
+        }));
+
+        interpreter
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -37,7 +45,7 @@ impl Interpreter {
 
     fn execute(&mut self, stmt: &Stmt) -> Result<(), LoxError> {
         match stmt {
-            Stmt::Expression(expr) => { let value = self.eval(expr)?; }
+            Stmt::Expression(expr) => { self.eval(expr)?; }
             Stmt::Print(expr) => {
                 let value = self.eval(expr)?;
                 println!("{}", value);
@@ -47,7 +55,7 @@ impl Interpreter {
                     Some(expr) => Some(self.eval(expr)?),
                     None => None,
                 };
-                self.env.define(identifier.clone(), value);
+                self.env.define(identifier.lexeme.clone(), value);
             }
             Stmt::Block(statements) => {
                 self.env = Environment::from(std::mem::take(&mut self.env));
@@ -121,7 +129,7 @@ impl Interpreter {
                         .map(|(lhs, rhs)| Value::Number(lhs * rhs)),
                     TokenType::Plus => match (lhs, rhs) {
                         (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
-                        (Value::String(lhs), rhs) => Ok(Value::String(lhs + &to_string(rhs))),
+                        (Value::String(lhs), rhs) => Ok(Value::String(lhs + &rhs.to_string())),
                         (lhs, rhs) => {
                             let message = format!(
                                 "Operator {} invalid operand combination {:?} and {:?}",
@@ -146,6 +154,25 @@ impl Interpreter {
             Expr::Ternary(condition, if_true, if_false) => {
                 let condition = self.eval(condition)?;
                 self.eval(if is_truthy(&condition) { if_true } else { if_false })
+            }
+            Expr::Call(callee, paren, args) => {
+                let callee = self.eval(callee)?;
+                let args = args.iter().map(|arg| self.eval(arg)).collect::<Result<Vec<_>, _>>()?;
+
+                if let Value::Fun { arity, name, f } = callee {
+                    if args.len() != arity as usize {
+                        let message = format!(
+                            "Function {} expected {} arguments, got {}",
+                            name, arity, args.len()
+                        );
+                        Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
+                    } else {
+                        f(self, &args)
+                    }
+                } else {
+                    let message = format!("{} is not a callable expression", callee);
+                    Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
+                }
             }
         }
     }
@@ -195,14 +222,5 @@ fn compare(op: &Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
             );
             Err(LoxError::new(ErrorType::Type, op.line, &message))
         }
-    }
-}
-
-fn to_string(value: Value) -> String {
-    match value {
-        Value::Nil => "nil".to_string(),
-        Value::Boolean(b) => b.to_string(),
-        Value::Number(num) => num.to_string(),
-        Value::String(str) => str,
     }
 }

@@ -1,5 +1,9 @@
+use crate::rlox::interpreter::Interpreter;
 use crate::rlox::token::Token;
 use std::fmt::{Display, Formatter};
+use crate::rlox::error::LoxError;
+
+type LoxFunction = fn(&mut Interpreter, &Vec<Value>) -> Result<Value, LoxError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -7,6 +11,7 @@ pub enum Value {
     Boolean(bool),
     Number(f64),
     String(String),
+    Fun { arity: u8, name: String, f: LoxFunction },
 }
 
 impl Display for Value {
@@ -16,6 +21,7 @@ impl Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Number(num) => write!(f, "{}", num),
             Value::String(str) => write!(f, "{}", str),
+            Value::Fun { arity, name, f: _ } => write!(f, "fun {}({} params)", name, arity),
         }
     }
 }
@@ -30,21 +36,7 @@ pub enum Expr {
     Variable(Token),
     Assignment(Token, Box<Expr>),
     Logical(Box<Expr>, Token, Box<Expr>),
-}
-
-impl Display for Expr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expr::Literal(value) => write!(f, "{}", value),
-            Expr::Grouping(expr) => write!(f, "(group {})", expr),
-            Expr::Unary(op, expr) => write!(f, "({} {})", op.lexeme, expr),
-            Expr::Binary(left, op, right) | Expr::Logical(left, op, right) =>
-                write!(f, "({} {} {})", op.lexeme, left, right),
-            Expr::Ternary(cond, if_true, if_false) => write!(f, "(? {} {} {})", cond, if_true, if_false),
-            Expr::Variable(identifier) => write!(f, "(var {})", identifier),
-            Expr::Assignment(identifier, expr) => write!(f, "(= {} {})", identifier, expr),
-        }
-    }
+    Call(Box<Expr>, Token, Vec<Expr>),
 }
 
 // Helpers for boxing expressions
@@ -73,6 +65,10 @@ impl Expr {
         Self::Logical(Box::new(expr_left), op, Box::new(expr_right))
     }
 
+    pub fn new_call(callee: Expr, paren: Token, args: Vec<Expr>) -> Self {
+        Self::Call(Box::new(callee), paren, args)
+    }
+
     // TODO get expr line
 }
 
@@ -90,7 +86,7 @@ impl Stmt {
     pub fn new_if(expr: Expr, if_branch: Stmt, else_branch: Option<Stmt>) -> Self {
         Stmt::If(expr, Box::new(if_branch), else_branch.map(|stmt| Box::new(stmt)))
     }
-    
+
     pub fn new_while(expr: Expr, body: Stmt) -> Self {
         Stmt::While(expr, Box::new(body))
     }

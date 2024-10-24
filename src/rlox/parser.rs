@@ -241,8 +241,28 @@ impl<'a> StmtIter<'a> {
             let expr = self.expr_unary()?;
             Ok(Expr::new_unary(op, expr))
         } else {
-            self.expr_primary()
+            self.expr_call()
         }
+    }
+
+    fn expr_call(&mut self) -> Result<Expr> {
+        let mut expr = self.expr_primary()?;
+
+        while self.next_token_if(TokenType::is(TokenType::LeftParen)).is_some() {
+            let mut args = Vec::new();
+            if !self.tokens.peek().is_some_and(|token| token.token_type == TokenType::RightParen) {
+                args.push(self.expression()?);
+                while self.next_token_if(TokenType::is(TokenType::Comma)).is_some() {
+                    // TODO max args size 255
+                    args.push(self.expression()?);
+                }
+            }
+
+            let paren = self.expect_token(TokenType::RightParen, 0, "Expected ')' after arguments")?;
+            expr = Expr::new_call(expr, paren, args);
+        }
+
+        Ok(expr)
     }
 
     /// Parses a primary expression.
