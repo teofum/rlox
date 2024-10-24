@@ -1,4 +1,4 @@
-use crate::rlox::ast::{Expr, Stmt, Value};
+use crate::rlox::ast::{Expr, Function, Stmt, Value};
 use crate::rlox::environment::Environment;
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::externals;
@@ -21,7 +21,7 @@ impl Interpreter {
         interpreter.env.define("clock".to_string(), Some(Value::Fun {
             name: "clock".to_string(),
             arity: 0,
-            f: externals::clock,
+            f: Function::External(externals::clock),
         }));
 
         interpreter
@@ -57,13 +57,17 @@ impl Interpreter {
                 };
                 self.env.define(identifier.lexeme.clone(), value);
             }
+            Stmt::Fun(identifier, params, body) => {
+                let fun = Value::Fun {
+                    name: identifier.lexeme.clone(),
+                    arity: params.len() as u8,
+                    f: Function::define(params.clone(), body.clone()),
+                };
+                self.env.define(identifier.lexeme.clone(), Some(fun));
+            }
             Stmt::Block(statements) => {
                 self.env = Environment::from(std::mem::take(&mut self.env));
-
-                for stmt in statements {
-                    self.execute(stmt)?;
-                }
-
+                for stmt in statements { self.execute(stmt)?; }
                 self.env = std::mem::take(&mut self.env).enclosing();
             }
             Stmt::If(expr, if_true, if_false) => {
@@ -167,7 +171,19 @@ impl Interpreter {
                         );
                         Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                     } else {
-                        f(self, &args)
+                        match f {
+                            Function::External(f) => f(self, &args),
+                            Function::Lox(f) => {
+                                self.env = Environment::from(std::mem::take(&mut self.env));
+                                for (param, arg) in f.params.iter().zip(args) {
+                                    self.env.define(param.lexeme.clone(), Some(arg));
+                                }
+
+                                for stmt in f.body { self.execute(&stmt)?; }
+                                self.env = std::mem::take(&mut self.env).enclosing();
+                                Ok(Value::Nil)
+                            }
+                        }
                     }
                 } else {
                     let message = format!("{} is not a callable expression", callee);

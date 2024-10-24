@@ -1,17 +1,35 @@
+use crate::rlox::error::LoxError;
 use crate::rlox::interpreter::Interpreter;
 use crate::rlox::token::Token;
 use std::fmt::{Display, Formatter};
-use crate::rlox::error::LoxError;
 
-type LoxFunction = fn(&mut Interpreter, &Vec<Value>) -> Result<Value, LoxError>;
+pub type ExternalFunction = fn(&mut Interpreter, &Vec<Value>) -> Result<Value, LoxError>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoxFunction {
+    pub params: Vec<Token>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Function {
+    External(ExternalFunction),
+    Lox(LoxFunction),
+}
+
+impl Function {
+    pub fn define(params: Vec<Token>, body: Vec<Stmt>) -> Self {
+        Self::Lox(LoxFunction { params, body })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Nil,
     Boolean(bool),
     Number(f64),
     String(String),
-    Fun { arity: u8, name: String, f: LoxFunction },
+    Fun { arity: u8, name: String, f: Function },
 }
 
 impl Display for Value {
@@ -26,7 +44,7 @@ impl Display for Value {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Value),
     Grouping(Box<Expr>),
@@ -72,12 +90,13 @@ impl Expr {
     // TODO get expr line
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Block(Vec<Stmt>),
     Expression(Expr),
     Print(Expr),
     Var(Token, Option<Expr>),
+    Fun(Token, Vec<Token>, Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
 }

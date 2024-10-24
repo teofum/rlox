@@ -18,6 +18,7 @@ impl<'a> StmtIter<'a> {
     fn stmt_or_declaration(&mut self) -> Result<Stmt> {
         let result = match self.next_token_if(TokenType::is_declaration) {
             Some(token) if token.token_type == TokenType::Var => self.var_declaration(),
+            Some(token) if token.token_type == TokenType::Fun => self.fun_declaration(),
             Some(_) => todo!("interpret: Unsupported declaration type"),
             None => self.statement(),
         };
@@ -36,6 +37,28 @@ impl<'a> StmtIter<'a> {
 
         self.expect_token(TokenType::Semicolon, name.line, "Expected ';' after statement")?;
         Ok(Stmt::Var(name, initializer))
+    }
+
+    fn fun_declaration(&mut self) -> Result<Stmt> {
+        let name = self.expect_token(TokenType::Identifier, 0, "Expected function name after \"fun\"")?;
+        self.expect_token(TokenType::LeftParen, name.line, "Expected '(' after function name")?;
+
+        let mut params = Vec::new();
+        if self.next_token_if(TokenType::is(TokenType::RightParen)).is_none() {
+            params.push(self.expect_token(TokenType::Identifier, name.line, "Expected identifier")?);
+            while self.next_token_if(TokenType::is(TokenType::Comma)).is_some() {
+                // TODO max params size 255
+                params.push(self.expect_token(TokenType::Identifier, name.line, "Expected identifier")?);
+            }
+            self.expect_token(TokenType::RightParen, name.line, "Expected ')' after parameter list")?;
+        }
+
+        let brace = self.expect_token(TokenType::LeftBrace, name.line, "Expected '{' before function body")?;
+        if let Stmt::Block(body) = self.stmt_block()? {
+            Ok(Stmt::Fun(name, params, body))
+        } else {
+            Err(self.error(brace.line, "Expected function body"))
+        }
     }
 
     fn statement(&mut self) -> Result<Stmt> {
