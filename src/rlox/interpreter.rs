@@ -1,10 +1,10 @@
 use crate::rlox::ast::{Expr, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef};
 use crate::rlox::environment::{Environment, Heap, Stack};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
-use crate::rlox::token::{Token, TokenType};
-use std::rc::Rc;
 use crate::rlox::externals::clock;
 use crate::rlox::lookups::Lookups;
+use crate::rlox::token::{Token, TokenType};
+use std::rc::Rc;
 
 #[derive(Eq, PartialEq)]
 pub enum RuntimeContext {
@@ -44,13 +44,45 @@ impl Interpreter {
         }
     }
 
-    pub fn execute(&mut self, stmt: &Stmt) -> Result<(), LoxError> {
+    pub fn execute(&mut self, stmt: &Stmt) -> Result<Option<Value>, LoxError> {
+        let mut return_value = None;
         match stmt {
             Stmt::Expression(expr) => { self.eval(expr)?; }
             Stmt::Print(expr) => {
                 let value_ref = self.eval(expr)?;
                 let value = self.deref_value(&value_ref)?;
                 println!("{}", value);
+            }
+            Stmt::Block(statements) => {
+                self.stack.push();
+                for stmt in statements {
+                    return_value = self.execute(stmt)?;
+                    if return_value.is_some() { break; }
+                }
+                self.stack.pop();
+            }
+            Stmt::If(expr, if_true, if_false) => {
+                let value_ref = self.eval(expr)?;
+                let truth_value = is_truthy(self.deref_value(&value_ref)?);
+
+                if truth_value {
+                    return_value = self.execute(if_true)?;
+                } else if let Some(if_false) = if_false {
+                    return_value = self.execute(if_false)?;
+                }
+            }
+            Stmt::While(expr, body) => {
+                while {
+                    let value_ref = self.eval(expr)?;
+                    is_truthy(self.deref_value(&value_ref)?)
+                } && return_value.is_none() {
+                    return_value = self.execute(body.as_ref())?;
+                }
+            }
+            Stmt::Return(expr) => {
+                let value_ref = self.eval(expr)?;
+                let value = self.clone_value(value_ref)?;
+                return_value = Some(value);
             }
             Stmt::Var(identifier, initializer) => {
                 let value = match initializer {
@@ -69,32 +101,9 @@ impl Interpreter {
                 )));
                 self.stack.define(*identifier, Some(fun));
             }
-            Stmt::Block(statements) => {
-                self.stack.push();
-                for stmt in statements { self.execute(stmt)?; }
-                self.stack.pop();
-            }
-            Stmt::If(expr, if_true, if_false) => {
-                let value_ref = self.eval(expr)?;
-                let truth_value = is_truthy(self.deref_value(&value_ref)?);
-
-                if truth_value {
-                    self.execute(if_true)?;
-                } else if let Some(if_false) = if_false {
-                    self.execute(if_false)?;
-                }
-            }
-            Stmt::While(expr, body) => {
-                while {
-                    let value_ref = self.eval(expr)?;
-                    is_truthy(self.deref_value(&value_ref)?)
-                } {
-                    self.execute(body.as_ref())?;
-                }
-            }
         }
 
-        Ok(())
+        Ok(return_value)
     }
 
     pub fn eval(&mut self, expr: &Expr) -> Result<ValueOrRef, LoxError> {
@@ -193,7 +202,7 @@ impl Interpreter {
                     if args.len() != f.arity() {
                         let message = format!(
                             "Function {} expected {} arguments, got {}",
-                            "<fun>", f.arity(), args.len() // TODO name
+                            f.name(), f.arity(), args.len()
                         );
                         Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                     } else {
@@ -206,9 +215,13 @@ impl Interpreter {
                                     self.stack.define(*param, Some(arg_value));
                                 }
 
-                                for stmt in &f.body { self.execute(stmt)?; }
+                                let mut return_value = None;
+                                for stmt in &f.body {
+                                    return_value = self.execute(stmt)?;
+                                    if return_value.is_some() { break; }
+                                }
                                 self.stack.pop();
-                                Ok(Value::Nil.wrap())
+                                Ok(return_value.unwrap_or(Value::Nil).wrap())
                             }
                         }
                     }

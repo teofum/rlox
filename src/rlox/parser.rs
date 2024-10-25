@@ -1,8 +1,8 @@
 use crate::rlox::ast::{Expr, Stmt, Value};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
+use crate::rlox::lookups::Lookups;
 use crate::rlox::token::{Token, TokenType};
 use std::iter::Peekable;
-use crate::rlox::lookups::Lookups;
 
 type Result<T> = std::result::Result<T, LoxError>;
 
@@ -16,7 +16,7 @@ impl<'a> StmtIter<'a> {
     pub fn new(
         tokens: &'a mut dyn Iterator<Item=Token>,
         lookups: &'a mut Lookups,
-        logger: &'a mut Logger
+        logger: &'a mut Logger,
     ) -> Self {
         Self { tokens: tokens.peekable(), lookups, logger }
     }
@@ -75,6 +75,7 @@ impl<'a> StmtIter<'a> {
             Some(token) if token.token_type == TokenType::If => self.stmt_if(),
             Some(token) if token.token_type == TokenType::While => self.stmt_while(),
             Some(token) if token.token_type == TokenType::For => self.stmt_for(),
+            Some(token) if token.token_type == TokenType::Return => self.stmt_return(),
             Some(_) => panic!("interpret: Unsupported statement type"),
             None => self.stmt_expression(),
         }
@@ -168,6 +169,16 @@ impl<'a> StmtIter<'a> {
         statements.push(Stmt::new_while(condition, body));
 
         Ok(Stmt::Block(statements))
+    }
+
+    fn stmt_return(&mut self) -> Result<Stmt> {
+        let mut expr = Expr::Literal(Value::Nil);
+        if self.next_token_if(TokenType::is(TokenType::Semicolon)).is_none() {
+            expr = self.expression()?;
+            self.expect_token(TokenType::Semicolon, 0, "Expected ';' after return value")?;
+        }
+
+        Ok(Stmt::Return(expr))
     }
 
     /// Helper function to parse productions with a binary, left-associative operator.
@@ -393,7 +404,7 @@ impl<'a> Parser<'a> {
     pub fn new(
         tokens: &'a mut dyn Iterator<Item=Token>,
         lookups: &'a mut Lookups,
-        logger: &'a mut Logger
+        logger: &'a mut Logger,
     ) -> Self {
         Self { tokens, lookups, logger }
     }

@@ -36,6 +36,13 @@ impl Function {
             Function::External(_, _, arity) => *arity as usize,
         }
     }
+    
+    pub fn name(&self) -> &str {
+        match self {
+            Function::Lox(_, name) => name,
+            Function::External(_, name, _) => name,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,7 +61,7 @@ impl Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Number(num) => write!(f, "{}", num),
             Value::String(str) => write!(f, "{}", str),
-            Value::Fun(fun) => write!(f, "fun"),
+            Value::Fun(fun) => write!(f, "fun {}", fun.name()),
         }
     }
 }
@@ -147,10 +154,11 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     Expression(Expr),
     Print(Expr),
-    Var(Symbol, Option<Expr>),
-    Fun(Symbol, Vec<Symbol>, Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
+    Return(Expr),
+    Var(Symbol, Option<Expr>),
+    Fun(Symbol, Vec<Symbol>, Vec<Stmt>),
 }
 
 impl Stmt {
