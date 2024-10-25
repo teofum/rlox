@@ -1,8 +1,10 @@
-use crate::rlox::ast::{Expr, Function, Stmt, Value};
-use crate::rlox::environment::Environment;
+use crate::rlox::ast::{Expr, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef};
+use crate::rlox::environment::{Environment, Heap, Stack};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
-use crate::rlox::externals;
 use crate::rlox::token::{Token, TokenType};
+use std::rc::Rc;
+use crate::rlox::externals::clock;
+use crate::rlox::lookups::Lookups;
 
 #[derive(Eq, PartialEq)]
 pub enum RuntimeContext {
@@ -11,20 +13,20 @@ pub enum RuntimeContext {
 }
 
 pub struct Interpreter {
-    env: Environment,
+    stack: Stack,
+    heap: Heap,
     ctx: RuntimeContext,
 }
 
 impl Interpreter {
-    pub fn new(ctx: RuntimeContext) -> Self {
-        let mut interpreter = Self { env: Environment::new(), ctx };
-        interpreter.env.define("clock".to_string(), Some(Value::Fun {
-            name: "clock".to_string(),
-            arity: 0,
-            f: Function::External(externals::clock),
-        }));
+    pub fn new(ctx: RuntimeContext, lookups: &mut Lookups) -> Self {
+        let mut stack = Stack::new();
+        stack.define(
+            lookups.get("clock"),
+            Some(Value::Fun(Rc::new(Function::External(clock, "clock".to_string(), 0)))),
+        );
 
-        interpreter
+        Self { stack, heap: Heap::new(), ctx }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -32,8 +34,7 @@ impl Interpreter {
             if let Err(err) = self.execute(stmt) {
                 // Unwind the stack
                 let mut stack_trace = Vec::new();
-                while !self.env.is_global() {
-                    self.env = std::mem::take(&mut self.env).enclosing();
+                while self.stack.pop().is_some() {
                     stack_trace.push("<anonymous block>".to_string());
                 }
 
@@ -43,42 +44,51 @@ impl Interpreter {
         }
     }
 
-    fn execute(&mut self, stmt: &Stmt) -> Result<(), LoxError> {
+    pub fn execute(&mut self, stmt: &Stmt) -> Result<(), LoxError> {
         match stmt {
             Stmt::Expression(expr) => { self.eval(expr)?; }
             Stmt::Print(expr) => {
-                let value = self.eval(expr)?;
+                let value_ref = self.eval(expr)?;
+                let value = self.deref_value(&value_ref)?;
                 println!("{}", value);
             }
             Stmt::Var(identifier, initializer) => {
                 let value = match initializer {
-                    Some(expr) => Some(self.eval(expr)?),
+                    Some(expr) => {
+                        let value_ref = self.eval(expr)?;
+                        Some(self.clone_value(value_ref)?)
+                    }
                     None => None,
                 };
-                self.env.define(identifier.lexeme.clone(), value);
+                self.stack.define(*identifier, value);
             }
             Stmt::Fun(identifier, params, body) => {
-                let fun = Value::Fun {
-                    name: identifier.lexeme.clone(),
-                    arity: params.len() as u8,
-                    f: Function::define(params.clone(), body.clone()),
-                };
-                self.env.define(identifier.lexeme.clone(), Some(fun));
+                let fun = Value::Fun(Rc::new(Function::Lox(
+                    LoxFunction { params: params.clone(), body: body.clone() },
+                    "fun".to_string(),
+                )));
+                self.stack.define(*identifier, Some(fun));
             }
             Stmt::Block(statements) => {
-                self.env = Environment::from(std::mem::take(&mut self.env));
+                self.stack.push();
                 for stmt in statements { self.execute(stmt)?; }
-                self.env = std::mem::take(&mut self.env).enclosing();
+                self.stack.pop();
             }
             Stmt::If(expr, if_true, if_false) => {
-                if is_truthy(&self.eval(expr)?) {
+                let value_ref = self.eval(expr)?;
+                let truth_value = is_truthy(self.deref_value(&value_ref)?);
+
+                if truth_value {
                     self.execute(if_true)?;
                 } else if let Some(if_false) = if_false {
                     self.execute(if_false)?;
                 }
             }
             Stmt::While(expr, body) => {
-                while is_truthy(&self.eval(expr)?) {
+                while {
+                    let value_ref = self.eval(expr)?;
+                    is_truthy(self.deref_value(&value_ref)?)
+                } {
                     self.execute(body.as_ref())?;
                 }
             }
@@ -87,24 +97,25 @@ impl Interpreter {
         Ok(())
     }
 
-    // TODO: implement reference values
-    pub fn eval(&mut self, expr: &Expr) -> Result<Value, LoxError> {
+    pub fn eval(&mut self, expr: &Expr) -> Result<ValueOrRef, LoxError> {
         match expr {
-            Expr::Literal(value) => Ok(value.clone()),
+            Expr::Literal(value) => Ok(value.clone().wrap()),
             Expr::Grouping(expr) => self.eval(expr),
-            Expr::Variable(identifier) => self.env.get(identifier).cloned(),
+            Expr::Variable(identifier) => Ok(self.stack.get_ref(*identifier)?),
             Expr::Assignment(identifier, expr) => {
-                let value = self.eval(expr)?;
-                self.env.assign(identifier.clone(), value).cloned()
+                let value_ref = self.eval(expr)?;
+                let value = self.clone_value(value_ref)?;
+                self.stack.assign(*identifier, value)
             }
             Expr::Unary(op, rhs) => {
-                let rhs = self.eval(rhs)?;
+                let rhs_ref = self.eval(rhs)?;
+                let rhs = self.deref_value(&rhs_ref)?;
 
                 match op.token_type {
-                    TokenType::Bang => Ok(Value::Boolean(!is_truthy(&rhs))),
+                    TokenType::Bang => Ok(Value::Boolean(!is_truthy(rhs)).wrap()),
                     TokenType::Minus => {
                         match rhs {
-                            Value::Number(x) => Ok(Value::Number(-x)),
+                            Value::Number(x) => Ok(Value::Number(-x).wrap()),
                             value => {
                                 let message = format!(
                                     "Operator {} expected Number, got {:?}",
@@ -118,22 +129,23 @@ impl Interpreter {
                 }
             }
             Expr::Binary(lhs, op, rhs) => {
-                let lhs = self.eval(lhs)?;
-                let rhs = self.eval(rhs)?;
+                let (lhs_ref, rhs_ref) = (self.eval(lhs)?, self.eval(rhs)?);
+                if op.token_type == TokenType::Comma { return Ok(rhs_ref); }
+
+                let (lhs, rhs) = (self.deref_value(&lhs_ref)?, self.deref_value(&rhs_ref)?);
 
                 match &op.token_type {
-                    TokenType::Comma => Ok(rhs),
-                    TokenType::BangEqual => Ok(Value::Boolean(lhs != rhs)),
-                    TokenType::EqualEqual => Ok(Value::Boolean(lhs == rhs)),
+                    TokenType::BangEqual => Ok(Value::Boolean(lhs != rhs).wrap()),
+                    TokenType::EqualEqual => Ok(Value::Boolean(lhs == rhs).wrap()),
                     TokenType::Minus => typecheck_numbers((lhs, rhs), op)
-                        .map(|(lhs, rhs)| Value::Number(lhs - rhs)),
+                        .map(|(lhs, rhs)| Value::Number(lhs - rhs)).wrap(),
                     TokenType::Slash => typecheck_numbers((lhs, rhs), op)
-                        .map(|(lhs, rhs)| Value::Number(lhs / rhs)),
+                        .map(|(lhs, rhs)| Value::Number(lhs / rhs)).wrap(),
                     TokenType::Star => typecheck_numbers((lhs, rhs), op)
-                        .map(|(lhs, rhs)| Value::Number(lhs * rhs)),
+                        .map(|(lhs, rhs)| Value::Number(lhs * rhs)).wrap(),
                     TokenType::Plus => match (lhs, rhs) {
-                        (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
-                        (Value::String(lhs), rhs) => Ok(Value::String(lhs + &rhs.to_string())),
+                        (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs).wrap()),
+                        (Value::String(lhs), rhs) => Ok(Value::String(lhs.to_string() + &rhs.to_string()).wrap()),
                         (lhs, rhs) => {
                             let message = format!(
                                 "Operator {} invalid operand combination {:?} and {:?}",
@@ -142,46 +154,61 @@ impl Interpreter {
                             Err(LoxError::new(ErrorType::Type, op.line, &message))
                         }
                     }
-                    comp if TokenType::is_comparison_op(comp) => compare(op, lhs, rhs),
+                    comp if TokenType::is_comparison_op(comp) => compare(op, lhs, rhs).wrap(),
                     _ => panic!("eval: Binary expression with non-binary operator")
                 }
             }
             Expr::Logical(lhs, op, rhs) => {
                 let lhs = self.eval(lhs)?;
+                let truth_value = is_truthy(self.deref_value(&lhs)?);
 
                 match &op.token_type {
-                    TokenType::Or => if is_truthy(&lhs) { Ok(lhs) } else { self.eval(rhs) },
-                    TokenType::And => if !is_truthy(&lhs) { Ok(lhs) } else { self.eval(rhs) },
+                    TokenType::Or => if truth_value { Ok(lhs) } else { self.eval(rhs) },
+                    TokenType::And => if !truth_value { Ok(lhs) } else { self.eval(rhs) },
                     _ => panic!("eval: Binary expression with non-binary operator")
                 }
             }
             Expr::Ternary(condition, if_true, if_false) => {
-                let condition = self.eval(condition)?;
-                self.eval(if is_truthy(&condition) { if_true } else { if_false })
+                let cond_value_ref = self.eval(condition)?;
+                let cond_value = is_truthy(self.deref_value(&cond_value_ref)?);
+                self.eval(if cond_value { if_true } else { if_false })
             }
             Expr::Call(callee, paren, args) => {
                 let callee = self.eval(callee)?;
-                let args = args.iter().map(|arg| self.eval(arg)).collect::<Result<Vec<_>, _>>()?;
+                let args = args.iter()
+                    .map(|arg| self.eval(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
 
-                if let Value::Fun { arity, name, f } = callee {
-                    if args.len() != arity as usize {
+                let callee = match callee {
+                    ValueOrRef::StackRef(sym) => self.stack.get_value(sym),
+                    _ => {
+                        let message = format!("{} is not a callable expression", callee);
+                        Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
+                    }
+                }?;
+
+                if let Value::Fun(f) = callee {
+                    let f = f.clone();
+                    let f = f.as_ref();
+                    if args.len() != f.arity() {
                         let message = format!(
                             "Function {} expected {} arguments, got {}",
-                            name, arity, args.len()
+                            "<fun>", f.arity(), args.len() // TODO name
                         );
                         Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                     } else {
                         match f {
-                            Function::External(f) => f(self, &args),
-                            Function::Lox(f) => {
-                                self.env = Environment::from(std::mem::take(&mut self.env));
+                            Function::External(f, _, _) => f(self, &args).wrap(),
+                            Function::Lox(f, _) => {
+                                self.stack.push();
                                 for (param, arg) in f.params.iter().zip(args) {
-                                    self.env.define(param.lexeme.clone(), Some(arg));
+                                    let arg_value = self.clone_value(arg)?;
+                                    self.stack.define(*param, Some(arg_value));
                                 }
 
-                                for stmt in f.body { self.execute(&stmt)?; }
-                                self.env = std::mem::take(&mut self.env).enclosing();
-                                Ok(Value::Nil)
+                                for stmt in &f.body { self.execute(stmt)?; }
+                                self.stack.pop();
+                                Ok(Value::Nil.wrap())
                             }
                         }
                     }
@@ -190,6 +217,22 @@ impl Interpreter {
                     Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                 }
             }
+        }
+    }
+
+    fn deref_value<'a>(&'a self, value_or_ref: &'a ValueOrRef) -> Result<&'a Value, LoxError> {
+        match value_or_ref {
+            ValueOrRef::Value(v) => Ok(v),
+            ValueOrRef::StackRef(id) => self.stack.get_value(*id),
+            ValueOrRef::HeapRef(id) => self.heap.get_value(*id),
+        }
+    }
+
+    fn clone_value(&self, value_or_ref: ValueOrRef) -> Result<Value, LoxError> {
+        match value_or_ref {
+            ValueOrRef::Value(v) => Ok(v),
+            ValueOrRef::StackRef(sym) => self.stack.copy_value(sym),
+            ValueOrRef::HeapRef(sym) => self.heap.copy_value(sym),
         }
     }
 }
@@ -202,9 +245,9 @@ fn is_truthy(value: &Value) -> bool {
     }
 }
 
-fn typecheck_numbers(values: (Value, Value), op: &Token) -> Result<(f64, f64), LoxError> {
+fn typecheck_numbers(values: (&Value, &Value), op: &Token) -> Result<(f64, f64), LoxError> {
     if let (Value::Number(lhs), Value::Number(rhs)) = values {
-        Ok((lhs, rhs))
+        Ok((*lhs, *rhs))
     } else {
         let message = format!(
             "Operator {} expected Number and Number, got {:?} and {:?}",
@@ -214,7 +257,7 @@ fn typecheck_numbers(values: (Value, Value), op: &Token) -> Result<(f64, f64), L
     }
 }
 
-fn compare(op: &Token, lhs: Value, rhs: Value) -> Result<Value, LoxError> {
+fn compare(op: &Token, lhs: &Value, rhs: &Value) -> Result<Value, LoxError> {
     fn compare_impl<T>(op: &Token, lhs: T, rhs: T) -> Result<Value, LoxError>
     where
         T: PartialOrd,

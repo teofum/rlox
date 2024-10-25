@@ -6,9 +6,11 @@ mod parser;
 mod interpreter;
 mod environment;
 mod externals;
+mod lookups;
 
 use crate::rlox::error::Logger;
 use crate::rlox::interpreter::{Interpreter, RuntimeContext};
+use crate::rlox::lookups::Lookups;
 use crate::rlox::parser::Parser;
 use crate::rlox::scanner::Scanner;
 use std::error::Error;
@@ -23,15 +25,17 @@ pub fn run_file(file_path: &str) -> Result<(), Box<dyn Error>> {
     let mut contents = String::new();
     reader.read_to_string(&mut contents)?;
 
-    let mut interpreter = Interpreter::new(RuntimeContext::Script);
-    run(&contents, &mut interpreter)
+    let mut lookups = Lookups::new();
+    let mut interpreter = Interpreter::new(RuntimeContext::Script, &mut lookups);
+    run(&contents, &mut interpreter, &mut lookups)
 }
 
 pub fn run_prompt() -> Result<(), Box<dyn Error>> {
     let mut buffer = String::new();
     let stdin = io::stdin();
 
-    let mut interpreter = Interpreter::new(RuntimeContext::Interactive);
+    let mut lookups = Lookups::new();
+    let mut interpreter = Interpreter::new(RuntimeContext::Interactive, &mut lookups);
     loop {
         print!("> ");
         io::stdout().flush()?;
@@ -40,7 +44,7 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
         let bytes_read = stdin.read_line(&mut buffer)?;
         if bytes_read == 0 { break; }
 
-        if let Err(error) = run(&buffer, &mut interpreter) {
+        if let Err(error) = run(&buffer, &mut interpreter, &mut lookups) {
             println!("{}", error);
         }
     }
@@ -48,13 +52,13 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), Box<dyn Error>> {
+fn run(source: &str, interpreter: &mut Interpreter, lookups: &mut Lookups) -> Result<(), Box<dyn Error>> {
     let mut scan_logger = Logger::new();
     let mut parse_logger = Logger::new();
     let mut runtime_logger = Logger::new();
 
     let mut tokens = Scanner::new(source, &mut scan_logger).into_iter();
-    let parser = Parser::new(&mut tokens, &mut parse_logger);
+    let parser = Parser::new(&mut tokens, lookups, &mut parse_logger);
     interpreter.interpret(&mut parser.into_iter(), &mut runtime_logger);
 
     Logger::from([scan_logger, parse_logger, runtime_logger]).result()

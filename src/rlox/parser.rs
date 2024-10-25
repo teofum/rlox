@@ -2,17 +2,23 @@ use crate::rlox::ast::{Expr, Stmt, Value};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::token::{Token, TokenType};
 use std::iter::Peekable;
+use crate::rlox::lookups::Lookups;
 
 type Result<T> = std::result::Result<T, LoxError>;
 
 pub struct StmtIter<'a> {
     tokens: Peekable<&'a mut dyn Iterator<Item=Token>>,
     logger: &'a mut Logger,
+    lookups: &'a mut Lookups,
 }
 
 impl<'a> StmtIter<'a> {
-    pub fn new(tokens: &'a mut dyn Iterator<Item=Token>, logger: &'a mut Logger) -> Self {
-        Self { tokens: tokens.peekable(), logger }
+    pub fn new(
+        tokens: &'a mut dyn Iterator<Item=Token>,
+        lookups: &'a mut Lookups,
+        logger: &'a mut Logger
+    ) -> Self {
+        Self { tokens: tokens.peekable(), lookups, logger }
     }
 
     fn stmt_or_declaration(&mut self) -> Result<Stmt> {
@@ -36,7 +42,7 @@ impl<'a> StmtIter<'a> {
         }
 
         self.expect_token(TokenType::Semicolon, name.line, "Expected ';' after statement")?;
-        Ok(Stmt::Var(name, initializer))
+        Ok(Stmt::Var(self.lookups.get(&name.lexeme), initializer))
     }
 
     fn fun_declaration(&mut self) -> Result<Stmt> {
@@ -55,7 +61,8 @@ impl<'a> StmtIter<'a> {
 
         let brace = self.expect_token(TokenType::LeftBrace, name.line, "Expected '{' before function body")?;
         if let Stmt::Block(body) = self.stmt_block()? {
-            Ok(Stmt::Fun(name, params, body))
+            let params = params.iter().map(|param| self.lookups.get(&param.lexeme)).collect();
+            Ok(Stmt::Fun(self.lookups.get(&name.lexeme), params, body))
         } else {
             Err(self.error(brace.line, "Expected function body"))
         }
@@ -297,7 +304,7 @@ impl<'a> StmtIter<'a> {
                 TokenType::False => Ok(Expr::Literal(Value::Boolean(false))),
                 TokenType::Number(num) => Ok(Expr::Literal(Value::Number(num))),
                 TokenType::String(str) => Ok(Expr::Literal(Value::String(str))),
-                TokenType::Identifier => Ok(Expr::Variable(token)),
+                TokenType::Identifier => Ok(Expr::Variable(self.lookups.get(&token.lexeme))),
 
                 TokenType::LeftParen => {
                     let expr = self.expression()?;
@@ -379,11 +386,16 @@ impl<'a> Iterator for StmtIter<'a> {
 pub struct Parser<'a> {
     tokens: &'a mut dyn Iterator<Item=Token>,
     logger: &'a mut Logger,
+    lookups: &'a mut Lookups,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a mut dyn Iterator<Item=Token>, logger: &'a mut Logger) -> Self {
-        Self { tokens, logger }
+    pub fn new(
+        tokens: &'a mut dyn Iterator<Item=Token>,
+        lookups: &'a mut Lookups,
+        logger: &'a mut Logger
+    ) -> Self {
+        Self { tokens, lookups, logger }
     }
 
     pub fn iter_mut(&'a mut self) -> StmtIter<'a> {
@@ -396,7 +408,7 @@ impl<'a> IntoIterator for Parser<'a> {
     type IntoIter = StmtIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        StmtIter::new(self.tokens, self.logger)
+        StmtIter::new(self.tokens, self.lookups, self.logger)
     }
 }
 
@@ -408,6 +420,6 @@ where
     type IntoIter = StmtIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        StmtIter::new(self.tokens, self.logger)
+        StmtIter::new(self.tokens, self.lookups, self.logger)
     }
 }
