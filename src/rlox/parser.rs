@@ -1,4 +1,4 @@
-use crate::rlox::ast::{Expr, Stmt, Value};
+use crate::rlox::ast::{Expr, Stmt, Value, Var};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::lookups::Lookups;
 use crate::rlox::token::{Token, TokenType};
@@ -62,7 +62,8 @@ impl<'a> StmtIter<'a> {
         let brace = self.expect_token(TokenType::LeftBrace, name.line, "Expected '{' before function body")?;
         if let Stmt::Block(body) = self.stmt_block()? {
             let params = params.iter().map(|param| self.lookups.get(&param.lexeme)).collect();
-            Ok(Stmt::Fun(self.lookups.get(&name.lexeme), params, body))
+            let var = Var { symbol: self.lookups.get(&name.lexeme), name: name.lexeme };
+            Ok(Stmt::Fun(var, params, body))
         } else {
             Err(self.error(brace.line, "Expected function body"))
         }
@@ -211,8 +212,8 @@ impl<'a> StmtIter<'a> {
         if let Some(eq) = self.next_token_if(TokenType::is(TokenType::Equal)) {
             let value = self.expr_assignment()?;
 
-            if let Expr::Variable(name) = expr {
-                Ok(Expr::new_assignment(name, value))
+            if let Expr::Variable(var) = expr {
+                Ok(Expr::new_assignment(var, value))
             } else {
                 Err(self.error(eq.line, "Invalid assignment target"))
             }
@@ -315,7 +316,10 @@ impl<'a> StmtIter<'a> {
                 TokenType::False => Ok(Expr::Literal(Value::Boolean(false))),
                 TokenType::Number(num) => Ok(Expr::Literal(Value::Number(num))),
                 TokenType::String(str) => Ok(Expr::Literal(Value::String(str))),
-                TokenType::Identifier => Ok(Expr::Variable(self.lookups.get(&token.lexeme))),
+                TokenType::Identifier => {
+                    let var = Var { symbol: self.lookups.get(&token.lexeme), name: token.lexeme };
+                    Ok(Expr::Variable(var))
+                },
 
                 TokenType::LeftParen => {
                     let expr = self.expression()?;

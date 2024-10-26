@@ -36,7 +36,7 @@ impl Function {
             Function::External(_, _, arity) => *arity as usize,
         }
     }
-    
+
     pub fn name(&self) -> &str {
         match self {
             Function::Lox(_, name) => name,
@@ -86,11 +86,17 @@ impl<E> ToValueOrRef for Result<Value, E> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Var {
+    pub symbol: Symbol,
+    pub name: String,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum ValueOrRef {
     Value(Value),
-    StackRef(Symbol),
-    HeapRef(Symbol),
+    StackRef(Var),
+    HeapRef(Var),
 }
 
 impl Display for ValueOrRef {
@@ -110,8 +116,8 @@ pub enum Expr {
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
-    Variable(Symbol),
-    Assignment(Symbol, Box<Expr>),
+    Variable(Var),
+    Assignment(Var, Box<Expr>),
     Logical(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Token, Vec<Expr>),
 }
@@ -134,7 +140,7 @@ impl Expr {
         Self::Ternary(Box::new(expr_cond), Box::new(expr_true), Box::new(expr_false))
     }
 
-    pub fn new_assignment(identifier: Symbol, expr: Expr) -> Self {
+    pub fn new_assignment(identifier: Var, expr: Expr) -> Self {
         Self::Assignment(identifier, Box::new(expr))
     }
 
@@ -158,7 +164,7 @@ pub enum Stmt {
     While(Expr, Box<Stmt>),
     Return(Expr),
     Var(Symbol, Option<Expr>),
-    Fun(Symbol, Vec<Symbol>, Vec<Stmt>),
+    Fun(Var, Vec<Symbol>, Vec<Stmt>),
 }
 
 impl Stmt {

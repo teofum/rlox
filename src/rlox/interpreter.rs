@@ -6,27 +6,20 @@ use crate::rlox::lookups::Lookups;
 use crate::rlox::token::{Token, TokenType};
 use std::rc::Rc;
 
-#[derive(Eq, PartialEq)]
-pub enum RuntimeContext {
-    Script,
-    Interactive,
-}
-
 pub struct Interpreter {
     stack: Stack,
     heap: Heap,
-    ctx: RuntimeContext,
 }
 
 impl Interpreter {
-    pub fn new(ctx: RuntimeContext, lookups: &mut Lookups) -> Self {
+    pub fn new(lookups: &mut Lookups) -> Self {
         let mut stack = Stack::new();
         stack.define(
             lookups.get("clock"),
             Some(Value::Fun(Rc::new(Function::External(clock, "clock".to_string(), 0)))),
         );
 
-        Self { stack, heap: Heap::new(), ctx }
+        Self { stack, heap: Heap::new() }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -34,8 +27,8 @@ impl Interpreter {
             if let Err(err) = self.execute(stmt) {
                 // Unwind the stack
                 let mut stack_trace = Vec::new();
-                while self.stack.pop().is_some() {
-                    stack_trace.push("<anonymous block>".to_string());
+                while let Some(scope) = self.stack.pop() {
+                    stack_trace.push(scope.name);
                 }
 
                 logger.log(err.with_stack(stack_trace));
@@ -54,7 +47,7 @@ impl Interpreter {
                 println!("{}", value);
             }
             Stmt::Block(statements) => {
-                self.stack.push();
+                self.stack.push("<anonymous block>".to_string());
                 for stmt in statements {
                     return_value = self.execute(stmt)?;
                     if return_value.is_some() { break; }
@@ -94,12 +87,12 @@ impl Interpreter {
                 };
                 self.stack.define(*identifier, value);
             }
-            Stmt::Fun(identifier, params, body) => {
+            Stmt::Fun(var, params, body) => {
                 let fun = Value::Fun(Rc::new(Function::Lox(
                     LoxFunction { params: params.clone(), body: body.clone() },
-                    "fun".to_string(),
+                    var.name.to_string(),
                 )));
-                self.stack.define(*identifier, Some(fun));
+                self.stack.define(var.symbol, Some(fun));
             }
         }
 
@@ -110,11 +103,11 @@ impl Interpreter {
         match expr {
             Expr::Literal(value) => Ok(value.clone().wrap()),
             Expr::Grouping(expr) => self.eval(expr),
-            Expr::Variable(identifier) => Ok(self.stack.get_ref(*identifier)?),
-            Expr::Assignment(identifier, expr) => {
+            Expr::Variable(var) => Ok(self.stack.get_ref(var)?),
+            Expr::Assignment(var, expr) => {
                 let value_ref = self.eval(expr)?;
                 let value = self.clone_value(value_ref)?;
-                self.stack.assign(*identifier, value)
+                self.stack.assign(var, value)
             }
             Expr::Unary(op, rhs) => {
                 let rhs_ref = self.eval(rhs)?;
@@ -189,34 +182,34 @@ impl Interpreter {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 let callee = match callee {
-                    ValueOrRef::StackRef(sym) => self.stack.get_value(sym),
+                    ValueOrRef::StackRef(var) => self.stack.get_value(&var),
                     _ => {
                         let message = format!("{} is not a callable expression", callee);
                         Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                     }
                 }?;
 
-                if let Value::Fun(f) = callee {
-                    let f = f.clone();
-                    let f = f.as_ref();
-                    if args.len() != f.arity() {
+                if let Value::Fun(fun) = callee {
+                    let fun = fun.clone();
+                    let fun = fun.as_ref();
+                    if args.len() != fun.arity() {
                         let message = format!(
                             "Function {} expected {} arguments, got {}",
-                            f.name(), f.arity(), args.len()
+                            fun.name(), fun.arity(), args.len()
                         );
                         Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                     } else {
-                        match f {
-                            Function::External(f, _, _) => f(self, &args).wrap(),
-                            Function::Lox(f, _) => {
-                                self.stack.push();
-                                for (param, arg) in f.params.iter().zip(args) {
+                        match fun {
+                            Function::External(f_impl, _, _) => f_impl(self, &args).wrap(),
+                            Function::Lox(f_impl, _) => {
+                                self.stack.push("function ".to_string() + fun.name());
+                                for (param, arg) in f_impl.params.iter().zip(args) {
                                     let arg_value = self.clone_value(arg)?;
                                     self.stack.define(*param, Some(arg_value));
                                 }
 
                                 let mut return_value = None;
-                                for stmt in &f.body {
+                                for stmt in &f_impl.body {
                                     return_value = self.execute(stmt)?;
                                     if return_value.is_some() { break; }
                                 }
@@ -236,16 +229,16 @@ impl Interpreter {
     fn deref_value<'a>(&'a self, value_or_ref: &'a ValueOrRef) -> Result<&'a Value, LoxError> {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
-            ValueOrRef::StackRef(id) => self.stack.get_value(*id),
-            ValueOrRef::HeapRef(id) => self.heap.get_value(*id),
+            ValueOrRef::StackRef(var) => self.stack.get_value(var),
+            ValueOrRef::HeapRef(var) => self.heap.get_value(var),
         }
     }
 
     fn clone_value(&self, value_or_ref: ValueOrRef) -> Result<Value, LoxError> {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
-            ValueOrRef::StackRef(sym) => self.stack.copy_value(sym),
-            ValueOrRef::HeapRef(sym) => self.heap.copy_value(sym),
+            ValueOrRef::StackRef(var) => self.stack.copy_value(&var),
+            ValueOrRef::HeapRef(var) => self.heap.copy_value(&var),
         }
     }
 }

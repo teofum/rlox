@@ -9,7 +9,7 @@ mod externals;
 mod lookups;
 
 use crate::rlox::error::Logger;
-use crate::rlox::interpreter::{Interpreter, RuntimeContext};
+use crate::rlox::interpreter::{Interpreter};
 use crate::rlox::lookups::Lookups;
 use crate::rlox::parser::Parser;
 use crate::rlox::scanner::Scanner;
@@ -26,7 +26,7 @@ pub fn run_file(file_path: &str) -> Result<(), Box<dyn Error>> {
     reader.read_to_string(&mut contents)?;
 
     let mut lookups = Lookups::new();
-    let mut interpreter = Interpreter::new(RuntimeContext::Script, &mut lookups);
+    let mut interpreter = Interpreter::new(&mut lookups);
     run(&contents, &mut interpreter, &mut lookups)
 }
 
@@ -35,7 +35,7 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
 
     let mut lookups = Lookups::new();
-    let mut interpreter = Interpreter::new(RuntimeContext::Interactive, &mut lookups);
+    let mut interpreter = Interpreter::new(&mut lookups);
     loop {
         print!("> ");
         io::stdout().flush()?;
@@ -59,7 +59,9 @@ fn run(source: &str, interpreter: &mut Interpreter, lookups: &mut Lookups) -> Re
 
     let mut tokens = Scanner::new(source, &mut scan_logger).into_iter();
     let parser = Parser::new(&mut tokens, lookups, &mut parse_logger);
-    interpreter.interpret(&mut parser.into_iter(), &mut runtime_logger);
+    let ast: Vec<_> = parser.into_iter().collect();
+
+    interpreter.interpret(&mut ast.into_iter(), &mut runtime_logger);
 
     Logger::from([scan_logger, parse_logger, runtime_logger]).result()
 }
