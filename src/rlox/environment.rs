@@ -94,6 +94,7 @@ impl Env for Rc<RefCell<Environment>> {
     }
 }
 
+// TODO: remove values from the heap when an env dies, or some other form of gc
 #[derive(Debug)]
 pub struct Heap {
     data: Vec<Value>,

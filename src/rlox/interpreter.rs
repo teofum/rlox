@@ -222,6 +222,17 @@ impl Interpreter {
                     Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                 }
             }
+            Expr::Lambda(params, body) => {
+                let fun = Value::Fun(Rc::new(Function::Lox(
+                    LoxFunction {
+                        params: params.clone(),
+                        body: body.clone(),
+                        closure: self.env.clone(),
+                    },
+                    "<anonymous function>".to_string(),
+                )));
+                Ok(ValueOrRef::Value(fun))
+            }
         }
     }
 

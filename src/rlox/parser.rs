@@ -49,16 +49,7 @@ impl<'a> StmtIter<'a> {
         let name = self.expect_token(TokenType::Identifier, 0, "Expected function name after \"fun\"")?;
         self.expect_token(TokenType::LeftParen, name.line, "Expected '(' after function name")?;
 
-        let mut params = Vec::new();
-        if self.next_token_if(TokenType::is(TokenType::RightParen)).is_none() {
-            params.push(self.expect_token(TokenType::Identifier, name.line, "Expected identifier")?);
-            while self.next_token_if(TokenType::is(TokenType::Comma)).is_some() {
-                // TODO max params size 255
-                params.push(self.expect_token(TokenType::Identifier, name.line, "Expected identifier")?);
-            }
-            self.expect_token(TokenType::RightParen, name.line, "Expected ')' after parameter list")?;
-        }
-
+        let params = self.params_list(&name)?;
         let brace = self.expect_token(TokenType::LeftBrace, name.line, "Expected '{' before function body")?;
         if let Stmt::Block(body) = self.stmt_block()? {
             let params = params.iter().map(|param| self.lookups.get(&param.lexeme)).collect();
@@ -319,8 +310,9 @@ impl<'a> StmtIter<'a> {
                 TokenType::Identifier => {
                     let var = Var { symbol: self.lookups.get(&token.lexeme), name: token.lexeme };
                     Ok(Expr::Variable(var))
-                },
+                }
 
+                TokenType::Fun => self.expr_lambda(token),
                 TokenType::LeftParen => {
                     let expr = self.expression()?;
                     self.expect_token(TokenType::RightParen, token.line, "Expected ')' after expression")
@@ -332,6 +324,33 @@ impl<'a> StmtIter<'a> {
         } else {
             Err(self.error(0, "Expected expression"))
         }
+    }
+
+    fn expr_lambda(&mut self, token: Token) -> Result<Expr> {
+        self.expect_token(TokenType::LeftParen, token.line, "Expected '(' after lambda expression")?;
+
+        let params = self.params_list(&token)?;
+        let brace = self.expect_token(TokenType::LeftBrace, token.line, "Expected '{' before function body")?;
+        if let Stmt::Block(body) = self.stmt_block()? {
+            let params = params.iter().map(|param| self.lookups.get(&param.lexeme)).collect();
+            Ok(Expr::Lambda(params, body))
+        } else {
+            Err(self.error(brace.line, "Expected function body"))
+        }
+    }
+    
+    fn params_list(&mut self, start_token: &Token) -> Result<Vec<Token>> {
+        let mut params = Vec::new();
+        if self.next_token_if(TokenType::is(TokenType::RightParen)).is_none() {
+            params.push(self.expect_token(TokenType::Identifier, start_token.line, "Expected identifier")?);
+            while self.next_token_if(TokenType::is(TokenType::Comma)).is_some() {
+                // TODO max params size 255
+                params.push(self.expect_token(TokenType::Identifier, start_token.line, "Expected identifier")?);
+            }
+            self.expect_token(TokenType::RightParen, start_token.line, "Expected ')' after parameter list")?;
+        }
+        
+        Ok(params)
     }
 
     /// Consumes the next available token and returns it. Returns `None` if there are no tokens.

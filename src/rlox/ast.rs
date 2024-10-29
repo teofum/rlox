@@ -132,6 +132,7 @@ pub enum Expr {
     Assignment(Var, Box<Expr>),
     Logical(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Token, Vec<Expr>),
+    Lambda(Vec<Symbol>, Vec<Stmt>),
 }
 
 // Helpers for boxing expressions
