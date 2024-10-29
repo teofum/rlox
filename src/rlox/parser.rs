@@ -46,7 +46,12 @@ impl<'a> StmtIter<'a> {
     }
 
     fn fun_declaration(&mut self) -> Result<Stmt> {
-        let name = self.expect_token(TokenType::Identifier, 0, "Expected function name after \"fun\"")?;
+        let name = self.expect_token(
+            TokenType::Identifier,
+            0,
+            "Expected function name after \"fun\", lambda expression statements are not allowed"
+        )?;
+        
         self.expect_token(TokenType::LeftParen, name.line, "Expected '(' after function name")?;
 
         let params = self.params_list(&name)?;
