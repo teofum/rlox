@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use crate::rlox::environment::{Environment, VariableKey};
 use crate::rlox::error::LoxError;
 use crate::rlox::interpreter::Interpreter;
 use crate::rlox::lookups::Symbol;
@@ -7,10 +9,11 @@ use std::rc::Rc;
 
 pub type ExternalFunction = fn(&Interpreter, &Vec<ValueOrRef>) -> Result<Value, LoxError>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct LoxFunction {
     pub params: Vec<Symbol>,
     pub body: Vec<Stmt>,
+    pub closure: Rc<RefCell<Environment>>,
 }
 
 impl LoxFunction {
@@ -19,15 +22,24 @@ impl LoxFunction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl PartialEq for LoxFunction {
+    fn eq(&self, _: &Self) -> bool { false }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Function {
     External(ExternalFunction, String, u8),
     Lox(LoxFunction, String),
 }
 
 impl Function {
-    pub fn define(name: String, params: Vec<Symbol>, body: Vec<Stmt>) -> Self {
-        Self::Lox(LoxFunction { params, body }, name)
+    pub fn define(
+        name: String,
+        params: Vec<Symbol>,
+        body: Vec<Stmt>,
+        closure: Rc<RefCell<Environment>>,
+    ) -> Self {
+        Self::Lox(LoxFunction { params, body, closure }, name)
     }
 
     pub fn arity(&self) -> usize {
@@ -96,7 +108,7 @@ pub struct Var {
 pub enum ValueOrRef {
     Value(Value),
     StackRef(Var),
-    HeapRef(Var),
+    HeapRef(VariableKey),
 }
 
 impl Display for ValueOrRef {

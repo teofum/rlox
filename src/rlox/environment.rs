@@ -1,153 +1,120 @@
-use std::collections::hash_map::Entry;
 use crate::rlox::ast::{Value, ValueOrRef, Var};
 use crate::rlox::error::{ErrorType, LoxError};
 use crate::rlox::lookups::Symbol;
+use std::cell::RefCell;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::iter::Map;
+use std::rc::Rc;
 
-type VariableMap = HashMap<Symbol, Option<Value>>;
+pub type VariableKey = usize;
+type VariableMap = HashMap<Symbol, Option<VariableKey>>;
 
-pub trait Environment<T> {
-    fn define(&mut self, name: Symbol, value: T);
-    fn assign(&mut self, var: &Var, value: Value) -> Result<ValueOrRef, LoxError>;
-    fn get_ref(&self, var: &Var) -> Result<ValueOrRef, LoxError>;
-    fn get_value(&self, var: &Var) -> Result<&Value, LoxError>;
-    fn get_value_mut(&mut self, var: &Var) -> Result<&mut Value, LoxError>;
+pub trait Env {
+    fn define(&mut self, name: Symbol, value_key: Option<VariableKey>);
+    fn assign(&mut self, var: &Var, value_key: VariableKey) -> Result<ValueOrRef, LoxError>;
+    fn get(&self, var: &Var) -> Result<VariableKey, LoxError>;
+    
+    fn is_global(&self) -> bool;
+}
 
-    fn copy_value(&self, var: &Var) -> Result<Value, LoxError> {
-        self.get_value(var).cloned()
+fn get_error(line: usize, var_name: &str, problem: &str) -> LoxError {
+    let message = format!("Variable \"{}\" is {}", var_name, problem);
+    LoxError::new(ErrorType::Runtime, line, &message)
+}
+
+#[derive(Debug)]
+pub struct Environment {
+    name: String,
+    vars: VariableMap,
+    enclosing: Option<Rc<RefCell<Environment>>>,
+}
+
+impl Environment {
+    pub fn new(name: String) -> Rc<RefCell<Self>> {
+        let env = Self { name, vars: HashMap::new(), enclosing: None };
+        Rc::new(RefCell::new(env))
+    }
+
+    pub fn from(name: String, enclosing: Rc<RefCell<Environment>>) -> Rc<RefCell<Self>> {
+        let env = Self { name, vars: HashMap::new(), enclosing: Some(enclosing) };
+        Rc::new(RefCell::new(env))
+    }
+
+    pub fn name(self) -> String {
+        self.name
+    }
+}
+
+impl Env for Environment {
+    fn define(&mut self, name: Symbol, value: Option<VariableKey>) {
+        self.vars.insert(name, value);
+    }
+
+    fn assign(&mut self, var: &Var, value: VariableKey) -> Result<ValueOrRef, LoxError> {
+        if let Entry::Occupied(mut e) = self.vars.entry(var.symbol) {
+            e.insert(Some(value));
+            Ok(ValueOrRef::StackRef(var.clone()))
+        } else if let Some(enclosing) = &self.enclosing {
+            enclosing.borrow_mut().assign(var, value)
+        } else {
+            Err(get_error(0, &var.name, "undefined"))
+        }
+    }
+
+    fn get(&self, var: &Var) -> Result<VariableKey, LoxError> {
+        if let Some(value) = self.vars.get(&var.symbol) {
+            value.ok_or_else(|| get_error(0, &var.name, "uninitialized"))
+        } else if let Some(enclosing) = &self.enclosing {
+            enclosing.borrow().get(var)
+        } else {
+            Err(get_error(0, &var.name, "undefined"))
+        }
+    }
+
+    fn is_global(&self) -> bool {
+        self.enclosing.is_some()
+    }
+}
+
+impl Env for Rc<RefCell<Environment>> {
+    fn define(&mut self, name: Symbol, value_key: Option<VariableKey>) {
+        self.borrow_mut().define(name, value_key)
+    }
+
+    fn assign(&mut self, var: &Var, value_key: VariableKey) -> Result<ValueOrRef, LoxError> {
+        self.borrow_mut().assign(var, value_key)
+    }
+
+    fn get(&self, var: &Var) -> Result<VariableKey, LoxError> {
+        self.borrow().get(var)
+    }
+
+    fn is_global(&self) -> bool {
+        self.borrow().is_global()
     }
 }
 
 #[derive(Debug)]
-pub struct Scope {
-    pub name: String,
-    pub vars: VariableMap,
-}
-
-#[derive(Default, Debug)]
-pub struct Stack {
-    vars: Vec<Scope>,
-}
-
-impl Stack {
-    pub fn new() -> Self {
-        let global_scope = Scope {
-            name: String::from("<global scope>"),
-            vars: HashMap::new(),
-        };
-        Self { vars: Vec::from([global_scope]) }
-    }
-
-    pub fn push(&mut self, name: String) {
-        self.vars.push(Scope { name, vars: HashMap::new() });
-    }
-
-    pub fn pop(&mut self) -> Option<Scope> {
-        if self.vars.len() > 1 { self.vars.pop() } else { None }
-    }
-
-    fn get_error(line: usize, var_name: &str, problem: &str) -> LoxError {
-        let message = format!("Variable \"{}\" is {}", var_name, problem);
-        LoxError::new(ErrorType::Runtime, line, &message)
-    }
-}
-
-impl Environment<Option<Value>> for Stack {
-    fn define(&mut self, name: Symbol, value: Option<Value>) {
-        if let Some(Scope { vars, .. }) = self.vars.last_mut() {
-            vars.insert(name, value);
-        }
-    }
-
-    fn assign(&mut self, var: &Var, value: Value) -> Result<ValueOrRef, LoxError> {
-        for Scope { vars, .. } in self.vars.iter_mut().rev() {
-            if let Entry::Occupied(mut e) = vars.entry(var.symbol) {
-                e.insert(Some(value));
-                return Ok(ValueOrRef::StackRef(var.clone()));
-            }
-        }
-
-        // TODO variable name and line
-        Err(Self::get_error(0, &var.name, "undefined"))
-    }
-
-    fn get_ref(&self, var: &Var) -> Result<ValueOrRef, LoxError> {
-        for Scope { vars, .. } in self.vars.iter().rev() {
-            if vars.contains_key(&var.symbol) {
-                return Ok(ValueOrRef::StackRef(var.clone()));
-            }
-        }
-
-        Err(Self::get_error(0, &var.name, "undefined"))
-    }
-
-    fn get_value(&self, var: &Var) -> Result<&Value, LoxError> {
-        for Scope { vars, .. } in self.vars.iter().rev() {
-            if let Some(value) = vars.get(&var.symbol) {
-                return value.as_ref().ok_or_else(|| Self::get_error(0, &var.name, "uninitialized"));
-            }
-        }
-
-        Err(Self::get_error(0, &var.name, "undefined"))
-    }
-
-    fn get_value_mut(&mut self, var: &Var) -> Result<&mut Value, LoxError> {
-        for Scope { vars, .. } in self.vars.iter_mut().rev() {
-            if let Some(value) = vars.get_mut(&var.symbol) {
-                return value.as_mut().ok_or_else(|| Self::get_error(0, &var.name, "uninitialized"));
-            }
-        }
-
-        Err(Self::get_error(0, &var.name, "undefined"))
-    }
-}
-
-
-#[derive(Default, Debug)]
 pub struct Heap {
-    vars: HashMap<Symbol, Value>,
+    data: Vec<Value>,
 }
 
 impl Heap {
     pub fn new() -> Self {
-        Self { vars: HashMap::new() }
+        Self { data: Vec::new() }
     }
 
-    fn get_error(line: usize, var_name: &str, problem: &str) -> LoxError {
-        let message = format!("Variable \"{}\" is {}", var_name, problem);
-        LoxError::new(ErrorType::Runtime, line, &message)
-    }
-}
-
-impl Environment<Value> for Heap {
-    fn define(&mut self, name: Symbol, value: Value) {
-        self.vars.insert(name, value);
+    pub fn define(&mut self, value: Value) -> VariableKey {
+        self.data.push(value);
+        self.data.len() - 1
     }
 
-    fn assign(&mut self, var: &Var, value: Value) -> Result<ValueOrRef, LoxError> {
-        if let Entry::Occupied(mut e) = self.vars.entry(var.symbol) {
-            e.insert(value);
-            return Ok(ValueOrRef::HeapRef(var.clone()));
-        }
-
-        // TODO variable name and line
-        Err(Self::get_error(0, &var.name, "undefined"))
+    pub fn assign(&mut self, key: VariableKey, value: Value) -> VariableKey {
+        self.data[key] = value;
+        key
     }
 
-    fn get_ref(&self, var: &Var) -> Result<ValueOrRef, LoxError> {
-        if self.vars.contains_key(&var.symbol) {
-            Ok(ValueOrRef::HeapRef(var.clone()))
-        } else {
-            Err(Self::get_error(0, &var.name, "undefined"))
-        }
-    }
-
-    fn get_value(&self, var: &Var) -> Result<&Value, LoxError> {
-        self.vars.get(&var.symbol).ok_or_else(|| Self::get_error(0, &var.name, "undefined"))
-    }
-
-    fn get_value_mut(&mut self, var: &Var) -> Result<&mut Value, LoxError> {
-        self.vars.get_mut(&var.symbol).ok_or_else(|| Self::get_error(0, &var.name, "undefined"))
+    pub fn get(&self, key: VariableKey) -> &Value {
+        &self.data[key]
     }
 }

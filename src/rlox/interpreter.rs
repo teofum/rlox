@@ -1,43 +1,38 @@
-use crate::rlox::ast::{Expr, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef};
-use crate::rlox::environment::{Environment, Heap, Stack};
+use crate::rlox::ast::{Expr, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef, Var};
+use crate::rlox::environment::{Env, Environment, Heap};
 use crate::rlox::error::{ErrorType, Logger, LoxError};
 use crate::rlox::externals::clock;
-use crate::rlox::lookups::Lookups;
+use crate::rlox::lookups::{Lookups, Symbol};
 use crate::rlox::token::{Token, TokenType};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct Interpreter {
-    stack: Stack,
+    env: Rc<RefCell<Environment>>,
     heap: Heap,
 }
 
 impl Interpreter {
     pub fn new(lookups: &mut Lookups) -> Self {
-        let mut stack = Stack::new();
-        stack.define(
-            lookups.get("clock"),
-            Some(Value::Fun(Rc::new(Function::External(clock, "clock".to_string(), 0)))),
-        );
+        let mut heap = Heap::new();
+        let mut env = Environment::new("<global scope>".to_string());
 
-        Self { stack, heap: Heap::new() }
+        let builtin_clock = heap.define(Value::Fun(Rc::new(Function::External(clock, "clock".to_string(), 0))));
+        env.define(lookups.get("clock"), Some(builtin_clock));
+
+        Self { env, heap }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
         for ref stmt in stmt_iter {
             if let Err(err) = self.execute(stmt) {
-                // Unwind the stack
-                let mut stack_trace = Vec::new();
-                while let Some(scope) = self.stack.pop() {
-                    stack_trace.push(scope.name);
-                }
-
-                logger.log(err.with_stack(stack_trace));
+                logger.log(err);
                 break;
             }
         }
     }
 
-    pub fn execute(&mut self, stmt: &Stmt) -> Result<Option<Value>, LoxError> {
+    fn execute(&mut self, stmt: &Stmt) -> Result<Option<Value>, LoxError> {
         let mut return_value = None;
         match stmt {
             Stmt::Expression(expr) => { self.eval(expr)?; }
@@ -47,12 +42,15 @@ impl Interpreter {
                 println!("{}", value);
             }
             Stmt::Block(statements) => {
-                self.stack.push("<anonymous block>".to_string());
+                let previous_env = self.env.clone();
+                self.env = Environment::from("<anonymous block>".to_string(), self.env.clone());
+
                 for stmt in statements {
                     return_value = self.execute(stmt)?;
                     if return_value.is_some() { break; }
                 }
-                self.stack.pop();
+
+                self.env = previous_env;
             }
             Stmt::If(expr, if_true, if_false) => {
                 let value_ref = self.eval(expr)?;
@@ -85,29 +83,33 @@ impl Interpreter {
                     }
                     None => None,
                 };
-                self.stack.define(*identifier, value);
+                self.define(*identifier, value);
             }
             Stmt::Fun(var, params, body) => {
                 let fun = Value::Fun(Rc::new(Function::Lox(
-                    LoxFunction { params: params.clone(), body: body.clone() },
+                    LoxFunction {
+                        params: params.clone(),
+                        body: body.clone(),
+                        closure: self.env.clone(),
+                    },
                     var.name.to_string(),
                 )));
-                self.stack.define(var.symbol, Some(fun));
+                self.define(var.symbol, Some(fun));
             }
         }
 
         Ok(return_value)
     }
 
-    pub fn eval(&mut self, expr: &Expr) -> Result<ValueOrRef, LoxError> {
+    fn eval(&mut self, expr: &Expr) -> Result<ValueOrRef, LoxError> {
         match expr {
             Expr::Literal(value) => Ok(value.clone().wrap()),
             Expr::Grouping(expr) => self.eval(expr),
-            Expr::Variable(var) => Ok(self.stack.get_ref(var)?),
+            Expr::Variable(var) => Ok(ValueOrRef::HeapRef(self.env.get(var)?)),
             Expr::Assignment(var, expr) => {
                 let value_ref = self.eval(expr)?;
                 let value = self.clone_value(value_ref)?;
-                self.stack.assign(var, value)
+                self.assign(var, value)
             }
             Expr::Unary(op, rhs) => {
                 let rhs_ref = self.eval(rhs)?;
@@ -181,13 +183,7 @@ impl Interpreter {
                     .map(|arg| self.eval(arg))
                     .collect::<Result<Vec<_>, _>>()?;
 
-                let callee = match callee {
-                    ValueOrRef::StackRef(var) => self.stack.get_value(&var),
-                    _ => {
-                        let message = format!("{} is not a callable expression", callee);
-                        Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
-                    }
-                }?;
+                let callee = self.deref_value(&callee)?;
 
                 if let Value::Fun(fun) = callee {
                     let fun = fun.clone();
@@ -202,10 +198,12 @@ impl Interpreter {
                         match fun {
                             Function::External(f_impl, _, _) => f_impl(self, &args).wrap(),
                             Function::Lox(f_impl, _) => {
-                                self.stack.push("function ".to_string() + fun.name());
+                                let previous_env = self.env.clone();
+
+                                self.env = Environment::from("function ".to_string() + fun.name(), f_impl.closure.clone());
                                 for (param, arg) in f_impl.params.iter().zip(args) {
                                     let arg_value = self.clone_value(arg)?;
-                                    self.stack.define(*param, Some(arg_value));
+                                    self.define(*param, Some(arg_value));
                                 }
 
                                 let mut return_value = None;
@@ -213,7 +211,8 @@ impl Interpreter {
                                     return_value = self.execute(stmt)?;
                                     if return_value.is_some() { break; }
                                 }
-                                self.stack.pop();
+
+                                self.env = previous_env;
                                 Ok(return_value.unwrap_or(Value::Nil).wrap())
                             }
                         }
@@ -229,17 +228,34 @@ impl Interpreter {
     fn deref_value<'a>(&'a self, value_or_ref: &'a ValueOrRef) -> Result<&'a Value, LoxError> {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
-            ValueOrRef::StackRef(var) => self.stack.get_value(var),
-            ValueOrRef::HeapRef(var) => self.heap.get_value(var),
+            ValueOrRef::StackRef(var) => {
+                let key = self.env.get(var)?;
+                Ok(self.heap.get(key))
+            }
+            ValueOrRef::HeapRef(key) => Ok(self.heap.get(*key)),
         }
     }
 
     fn clone_value(&self, value_or_ref: ValueOrRef) -> Result<Value, LoxError> {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
-            ValueOrRef::StackRef(var) => self.stack.copy_value(&var),
-            ValueOrRef::HeapRef(var) => self.heap.copy_value(&var),
+            ValueOrRef::StackRef(var) => {
+                let key = self.env.get(&var)?;
+                Ok(self.heap.get(key).clone())
+            }
+            ValueOrRef::HeapRef(key) => Ok(self.heap.get(key).clone()),
         }
+    }
+
+    fn define(&mut self, identifier: Symbol, value: Option<Value>) {
+        let key = value.map(|value| self.heap.define(value));
+        self.env.define(identifier, key);
+    }
+
+    fn assign(&mut self, var: &Var, value: Value) -> Result<ValueOrRef, LoxError> {
+        let key = self.env.get(var)?;
+        self.heap.assign(key, value);
+        self.env.assign(var, key)
     }
 }
 
