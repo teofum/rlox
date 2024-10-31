@@ -12,7 +12,9 @@ type VariableMap = HashMap<Symbol, Option<VariableKey>>;
 pub trait Env {
     fn define(&mut self, name: Symbol, value_key: Option<VariableKey>);
     fn assign(&mut self, var: &Var, value_key: VariableKey) -> Result<ValueOrRef, LoxError>;
+    fn assign_at(&mut self, var: &Var, value_key: VariableKey, depth: usize) -> Result<ValueOrRef, LoxError>;
     fn get(&self, var: &Var) -> Result<VariableKey, LoxError>;
+    fn get_at(&self, var: &Var, depth: usize) -> Result<VariableKey, LoxError>;
     
     fn is_global(&self) -> bool;
 }
@@ -54,20 +56,36 @@ impl Env for Environment {
         if let Entry::Occupied(mut e) = self.vars.entry(var.symbol) {
             e.insert(Some(value));
             Ok(ValueOrRef::StackRef(var.clone()))
-        } else if let Some(enclosing) = &self.enclosing {
-            enclosing.borrow_mut().assign(var, value)
         } else {
             Err(get_error(0, &var.name, "undefined"))
+        }
+    }
+
+    fn assign_at(&mut self, var: &Var, value_key: VariableKey, depth: usize) -> Result<ValueOrRef, LoxError> {
+        if depth == 0 {
+            self.assign(var, value_key)
+        } else if let Some(enclosing) = &self.enclosing {
+            enclosing.borrow_mut().assign_at(var, value_key, depth - 1)
+        } else {
+            Err(LoxError::new(ErrorType::Runtime, 0, "Unresolved variable"))
         }
     }
 
     fn get(&self, var: &Var) -> Result<VariableKey, LoxError> {
         if let Some(value) = self.vars.get(&var.symbol) {
             value.ok_or_else(|| get_error(0, &var.name, "uninitialized"))
-        } else if let Some(enclosing) = &self.enclosing {
-            enclosing.borrow().get(var)
         } else {
             Err(get_error(0, &var.name, "undefined"))
+        }
+    }
+
+    fn get_at(&self, var: &Var, depth: usize) -> Result<VariableKey, LoxError> {
+        if depth == 0 {
+            self.get(var)
+        } else if let Some(enclosing) = &self.enclosing {
+            enclosing.borrow().get_at(var, depth - 1)
+        } else {
+            Err(LoxError::new(ErrorType::Runtime, 0, "Unresolved variable"))
         }
     }
 
@@ -84,9 +102,17 @@ impl Env for Rc<RefCell<Environment>> {
     fn assign(&mut self, var: &Var, value_key: VariableKey) -> Result<ValueOrRef, LoxError> {
         self.borrow_mut().assign(var, value_key)
     }
+    
+    fn assign_at(&mut self, var: &Var, value_key: VariableKey, depth: usize) -> Result<ValueOrRef, LoxError> {
+        self.borrow_mut().assign_at(var, value_key, depth)
+    }
 
     fn get(&self, var: &Var) -> Result<VariableKey, LoxError> {
         self.borrow().get(var)
+    }
+
+    fn get_at(&self, var: &Var, depth: usize) -> Result<VariableKey, LoxError> {
+        self.borrow().get_at(var, depth)
     }
 
     fn is_global(&self) -> bool {

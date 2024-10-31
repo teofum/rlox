@@ -1,13 +1,13 @@
-use std::cell::RefCell;
 use crate::rlox::environment::{Environment, VariableKey};
-use crate::rlox::error::LoxError;
+use crate::rlox::error::LoxResult;
 use crate::rlox::interpreter::Interpreter;
 use crate::rlox::lookups::Symbol;
 use crate::rlox::token::Token;
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-pub type ExternalFunction = fn(&Interpreter, &Vec<ValueOrRef>) -> Result<Value, LoxError>;
+pub type ExternalFunction = fn(&Interpreter, &Vec<ValueOrRef>) -> LoxResult<Value>;
 
 #[derive(Debug)]
 pub struct LoxFunction {
@@ -91,8 +91,8 @@ impl ToValueOrRef for Value {
     }
 }
 
-impl<E> ToValueOrRef for Result<Value, E> {
-    type ValueOrRefType = Result<ValueOrRef, E>;
+impl ToValueOrRef for LoxResult<Value> {
+    type ValueOrRefType = LoxResult<ValueOrRef>;
     fn wrap(self) -> Self::ValueOrRefType {
         self.map(|v| v.wrap())
     }
@@ -128,8 +128,8 @@ pub enum Expr {
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
-    Variable(Var),
-    Assignment(Var, Box<Expr>),
+    Variable(Var, Option<usize>),
+    Assignment(Var, Box<Expr>, Option<usize>),
     Logical(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Token, Vec<Expr>),
     Lambda(Vec<Symbol>, Vec<Stmt>),
@@ -154,7 +154,7 @@ impl Expr {
     }
 
     pub fn new_assignment(identifier: Var, expr: Expr) -> Self {
-        Self::Assignment(identifier, Box::new(expr))
+        Self::Assignment(identifier, Box::new(expr), None)
     }
 
     pub fn new_logical(expr_left: Expr, op: Token, expr_right: Expr) -> Self {

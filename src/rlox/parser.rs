@@ -1,10 +1,8 @@
 use crate::rlox::ast::{Expr, Stmt, Value, Var};
-use crate::rlox::error::{ErrorType, Logger, LoxError};
+use crate::rlox::error::{ErrorType, Logger, LoxError, LoxResult};
 use crate::rlox::lookups::Lookups;
 use crate::rlox::token::{Token, TokenType};
 use std::iter::Peekable;
-
-type Result<T> = std::result::Result<T, LoxError>;
 
 pub struct StmtIter<'a> {
     tokens: Peekable<&'a mut dyn Iterator<Item=Token>>,
@@ -21,7 +19,7 @@ impl<'a> StmtIter<'a> {
         Self { tokens: tokens.peekable(), lookups, logger }
     }
 
-    fn stmt_or_declaration(&mut self) -> Result<Stmt> {
+    fn stmt_or_declaration(&mut self) -> LoxResult<Stmt> {
         let result = match self.next_token_if(TokenType::is_declaration) {
             Some(token) if token.token_type == TokenType::Var => self.var_declaration(),
             Some(token) if token.token_type == TokenType::Fun => self.fun_declaration(),
@@ -33,7 +31,7 @@ impl<'a> StmtIter<'a> {
         result.map_err(|err| err)
     }
 
-    fn var_declaration(&mut self) -> Result<Stmt> {
+    fn var_declaration(&mut self) -> LoxResult<Stmt> {
         let name = self.expect_token(TokenType::Identifier, 0, "Expected variable name after \"var\"")?;
 
         let mut initializer = None;
@@ -45,13 +43,13 @@ impl<'a> StmtIter<'a> {
         Ok(Stmt::Var(self.lookups.get(&name.lexeme), initializer))
     }
 
-    fn fun_declaration(&mut self) -> Result<Stmt> {
+    fn fun_declaration(&mut self) -> LoxResult<Stmt> {
         let name = self.expect_token(
             TokenType::Identifier,
             0,
-            "Expected function name after \"fun\", lambda expression statements are not allowed"
+            "Expected function name after \"fun\", lambda expression statements are not allowed",
         )?;
-        
+
         self.expect_token(TokenType::LeftParen, name.line, "Expected '(' after function name")?;
 
         let params = self.params_list(&name)?;
@@ -65,7 +63,7 @@ impl<'a> StmtIter<'a> {
         }
     }
 
-    fn statement(&mut self) -> Result<Stmt> {
+    fn statement(&mut self) -> LoxResult<Stmt> {
         match self.next_token_if(TokenType::is_statement_begin) {
             Some(token) if token.token_type == TokenType::Print => self.stmt_print(),
             Some(token) if token.token_type == TokenType::LeftBrace => self.stmt_block(),
@@ -78,21 +76,21 @@ impl<'a> StmtIter<'a> {
         }
     }
 
-    fn stmt_expression(&mut self) -> Result<Stmt> {
+    fn stmt_expression(&mut self) -> LoxResult<Stmt> {
         let expr = self.expression()?;
         self.expect_token(TokenType::Semicolon, 0, "Expected ';' after statement")?;
 
         Ok(Stmt::Expression(expr))
     }
 
-    fn stmt_print(&mut self) -> Result<Stmt> {
+    fn stmt_print(&mut self) -> LoxResult<Stmt> {
         let expr = self.expression()?;
         self.expect_token(TokenType::Semicolon, 0, "Expected ';' after statement")?;
 
         Ok(Stmt::Print(expr))
     }
 
-    fn stmt_block(&mut self) -> Result<Stmt> {
+    fn stmt_block(&mut self) -> LoxResult<Stmt> {
         let mut statements = Vec::new();
 
         while self.tokens.peek().is_some_and(|token| token.token_type != TokenType::RightBrace) {
@@ -103,7 +101,7 @@ impl<'a> StmtIter<'a> {
         Ok(Stmt::Block(statements))
     }
 
-    fn stmt_if(&mut self) -> Result<Stmt> {
+    fn stmt_if(&mut self) -> LoxResult<Stmt> {
         self.expect_token(TokenType::LeftParen, 0, "Expected '(' after if statement")?;
         let expr = self.expression()?;
         self.expect_token(TokenType::RightParen, 0, "Expected ')' after condition")?;
@@ -118,7 +116,7 @@ impl<'a> StmtIter<'a> {
         Ok(Stmt::new_if(expr, if_true, if_false))
     }
 
-    fn stmt_while(&mut self) -> Result<Stmt> {
+    fn stmt_while(&mut self) -> LoxResult<Stmt> {
         self.expect_token(TokenType::LeftParen, 0, "Expected '(' after while statement")?;
         let expr = self.expression()?;
         self.expect_token(TokenType::RightParen, 0, "Expected ')' after condition")?;
@@ -128,7 +126,7 @@ impl<'a> StmtIter<'a> {
         Ok(Stmt::new_while(expr, body))
     }
 
-    fn stmt_for(&mut self) -> Result<Stmt> {
+    fn stmt_for(&mut self) -> LoxResult<Stmt> {
         self.expect_token(TokenType::LeftParen, 0, "Expected '(' after for statement")?;
 
         let init = if self.next_token_if(TokenType::is(TokenType::Semicolon)).is_some() {
@@ -168,7 +166,7 @@ impl<'a> StmtIter<'a> {
         Ok(Stmt::Block(statements))
     }
 
-    fn stmt_return(&mut self) -> Result<Stmt> {
+    fn stmt_return(&mut self) -> LoxResult<Stmt> {
         let mut expr = Expr::Literal(Value::Nil);
         if self.next_token_if(TokenType::is(TokenType::Semicolon)).is_none() {
             expr = self.expression()?;
@@ -184,9 +182,9 @@ impl<'a> StmtIter<'a> {
         &mut self,
         next_higher_precedence: F,
         op_pred: P,
-    ) -> Result<Expr>
+    ) -> LoxResult<Expr>
     where
-        F: Fn(&mut Self) -> Result<Expr>,
+        F: Fn(&mut Self) -> LoxResult<Expr>,
         P: Fn(&TokenType) -> bool,
     {
         let mut expr = next_higher_precedence(self)?;
@@ -198,17 +196,17 @@ impl<'a> StmtIter<'a> {
         Ok(expr)
     }
 
-    fn expression(&mut self) -> Result<Expr> {
+    fn expression(&mut self) -> LoxResult<Expr> {
         self.expr_assignment()
     }
 
-    fn expr_assignment(&mut self) -> Result<Expr> {
+    fn expr_assignment(&mut self) -> LoxResult<Expr> {
         let expr = self.expr_logic_or()?;
 
         if let Some(eq) = self.next_token_if(TokenType::is(TokenType::Equal)) {
             let value = self.expr_assignment()?;
 
-            if let Expr::Variable(var) = expr {
+            if let Expr::Variable(var, None) = expr {
                 Ok(Expr::new_assignment(var, value))
             } else {
                 Err(self.error(eq.line, "Invalid assignment target"))
@@ -218,7 +216,7 @@ impl<'a> StmtIter<'a> {
         }
     }
 
-    fn expr_logic_or(&mut self) -> Result<Expr> {
+    fn expr_logic_or(&mut self) -> LoxResult<Expr> {
         let mut expr = self.expr_logic_and()?;
         while let Some(op) = self.next_token_if(TokenType::is(TokenType::Or)) {
             let right = self.expr_logic_and()?;
@@ -228,7 +226,7 @@ impl<'a> StmtIter<'a> {
         Ok(expr)
     }
 
-    fn expr_logic_and(&mut self) -> Result<Expr> {
+    fn expr_logic_and(&mut self) -> LoxResult<Expr> {
         let mut expr = self.expr_comma()?;
         while let Some(op) = self.next_token_if(TokenType::is(TokenType::And)) {
             let right = self.expr_comma()?;
@@ -238,12 +236,12 @@ impl<'a> StmtIter<'a> {
         Ok(expr)
     }
 
-    fn expr_comma(&mut self) -> Result<Expr> {
+    fn expr_comma(&mut self) -> LoxResult<Expr> {
         self.left_associative_binary_op(Self::expr_ternary, TokenType::is(TokenType::Comma))
     }
 
     /// Parses a ternary operator. Right associative.
-    fn expr_ternary(&mut self) -> Result<Expr> {
+    fn expr_ternary(&mut self) -> LoxResult<Expr> {
         let mut expr = self.expr_equality()?;
         while let Some(op) = self.next_token_if(TokenType::is(TokenType::QuestionMark)) {
             let if_true = self.expression()?;
@@ -256,25 +254,25 @@ impl<'a> StmtIter<'a> {
         Ok(expr)
     }
 
-    fn expr_equality(&mut self) -> Result<Expr> {
+    fn expr_equality(&mut self) -> LoxResult<Expr> {
         self.left_associative_binary_op(Self::expr_comparison, TokenType::is_equality_op)
     }
 
-    fn expr_comparison(&mut self) -> Result<Expr> {
+    fn expr_comparison(&mut self) -> LoxResult<Expr> {
         self.left_associative_binary_op(Self::expr_term, TokenType::is_comparison_op)
     }
 
-    fn expr_term(&mut self) -> Result<Expr> {
+    fn expr_term(&mut self) -> LoxResult<Expr> {
         self.left_associative_binary_op(Self::expr_factor, TokenType::is_term_op)
     }
 
-    fn expr_factor(&mut self) -> Result<Expr> {
+    fn expr_factor(&mut self) -> LoxResult<Expr> {
         self.left_associative_binary_op(Self::expr_unary, TokenType::is_factor_op)
     }
 
     /// Parses a right-associative unary expression.
     /// Highest precedence within non-primary expressions.
-    fn expr_unary(&mut self) -> Result<Expr> {
+    fn expr_unary(&mut self) -> LoxResult<Expr> {
         if let Some(op) = self.next_token_if(TokenType::is_unary_op) {
             let expr = self.expr_unary()?;
             Ok(Expr::new_unary(op, expr))
@@ -283,7 +281,7 @@ impl<'a> StmtIter<'a> {
         }
     }
 
-    fn expr_call(&mut self) -> Result<Expr> {
+    fn expr_call(&mut self) -> LoxResult<Expr> {
         let mut expr = self.expr_primary()?;
 
         while self.next_token_if(TokenType::is(TokenType::LeftParen)).is_some() {
@@ -304,7 +302,7 @@ impl<'a> StmtIter<'a> {
     }
 
     /// Parses a primary expression.
-    fn expr_primary(&mut self) -> Result<Expr> {
+    fn expr_primary(&mut self) -> LoxResult<Expr> {
         if let Some(token) = self.next_token() {
             match token.token_type {
                 TokenType::Nil => Ok(Expr::Literal(Value::Nil)),
@@ -314,7 +312,7 @@ impl<'a> StmtIter<'a> {
                 TokenType::String(str) => Ok(Expr::Literal(Value::String(str))),
                 TokenType::Identifier => {
                     let var = Var { symbol: self.lookups.get(&token.lexeme), name: token.lexeme };
-                    Ok(Expr::Variable(var))
+                    Ok(Expr::Variable(var, None))
                 }
 
                 TokenType::Fun => self.expr_lambda(token),
@@ -331,7 +329,7 @@ impl<'a> StmtIter<'a> {
         }
     }
 
-    fn expr_lambda(&mut self, token: Token) -> Result<Expr> {
+    fn expr_lambda(&mut self, token: Token) -> LoxResult<Expr> {
         self.expect_token(TokenType::LeftParen, token.line, "Expected '(' after lambda expression")?;
 
         let params = self.params_list(&token)?;
@@ -343,8 +341,8 @@ impl<'a> StmtIter<'a> {
             Err(self.error(brace.line, "Expected function body"))
         }
     }
-    
-    fn params_list(&mut self, start_token: &Token) -> Result<Vec<Token>> {
+
+    fn params_list(&mut self, start_token: &Token) -> LoxResult<Vec<Token>> {
         let mut params = Vec::new();
         if self.next_token_if(TokenType::is(TokenType::RightParen)).is_none() {
             params.push(self.expect_token(TokenType::Identifier, start_token.line, "Expected identifier")?);
@@ -354,7 +352,7 @@ impl<'a> StmtIter<'a> {
             }
             self.expect_token(TokenType::RightParen, start_token.line, "Expected ')' after parameter list")?;
         }
-        
+
         Ok(params)
     }
 
@@ -377,7 +375,7 @@ impl<'a> StmtIter<'a> {
 
     /// Consumes the next available token and returns it only if `pred` is true for that token.
     /// Returns an error if there are no tokens, or if `pred` is false.
-    fn expect<F>(&mut self, pred: F, line: usize, message: &str) -> Result<Token>
+    fn expect<F>(&mut self, pred: F, line: usize, message: &str) -> LoxResult<Token>
     where
         F: Fn(&TokenType) -> bool,
     {
@@ -391,7 +389,7 @@ impl<'a> StmtIter<'a> {
     /// Returns an error if there are no tokens, or if the next token does not match.
     ///
     /// Shorthand for calling `expect` with `TokenType::is`.
-    fn expect_token(&mut self, token: TokenType, line: usize, message: &str) -> Result<Token> {
+    fn expect_token(&mut self, token: TokenType, line: usize, message: &str) -> LoxResult<Token> {
         self.expect(TokenType::is(token), line, message)
     }
 

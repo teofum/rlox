@@ -7,11 +7,13 @@ mod interpreter;
 mod environment;
 mod externals;
 mod lookups;
+mod resolver;
 
 use crate::rlox::error::Logger;
-use crate::rlox::interpreter::{Interpreter};
+use crate::rlox::interpreter::Interpreter;
 use crate::rlox::lookups::Lookups;
 use crate::rlox::parser::Parser;
+use crate::rlox::resolver::Resolver;
 use crate::rlox::scanner::Scanner;
 use std::error::Error;
 use std::fs::File;
@@ -55,13 +57,22 @@ pub fn run_prompt() -> Result<(), Box<dyn Error>> {
 fn run(source: &str, interpreter: &mut Interpreter, lookups: &mut Lookups) -> Result<(), Box<dyn Error>> {
     let mut scan_logger = Logger::new();
     let mut parse_logger = Logger::new();
-    let mut runtime_logger = Logger::new();
 
     let mut tokens = Scanner::new(source, &mut scan_logger).into_iter();
     let parser = Parser::new(&mut tokens, lookups, &mut parse_logger);
-    let ast: Vec<_> = parser.into_iter().collect();
+    let mut ast: Vec<_> = parser.into_iter().collect();
+
+    if let parse_errors @ Err(_) = Logger::from([scan_logger, parse_logger]).result() {
+        return parse_errors;
+    }
+
+    let mut runtime_logger = Logger::new();
+    let mut resolver = Resolver::new();
+    if let Err(resolve_error) = resolver.resolve_stmts(&mut ast) {
+        runtime_logger.log(resolve_error);
+        return runtime_logger.result();
+    }
 
     interpreter.interpret(&mut ast.into_iter(), &mut runtime_logger);
-
-    Logger::from([scan_logger, parse_logger, runtime_logger]).result()
+    runtime_logger.result()
 }

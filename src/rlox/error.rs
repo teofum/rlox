@@ -2,6 +2,8 @@ use colored::Colorize;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
+pub type LoxResult<T> = std::result::Result<T, LoxError>;
+
 #[derive(Debug)]
 pub enum ErrorType {
     Scanner,
@@ -9,6 +11,7 @@ pub enum ErrorType {
     Syntax,
     Runtime,
     Type,
+    Resolve,
 }
 
 #[derive(Debug)]
@@ -23,7 +26,7 @@ impl LoxError {
     pub fn new(error_type: ErrorType, line: usize, message: &str) -> Self {
         Self { error_type, line, message: message.to_string(), stack_trace: None }
     }
-    
+
     pub fn with_stack(self, stack: Vec<String>) -> Self {
         Self { error_type: self.error_type, line: self.line, message: self.message, stack_trace: Some(stack) }
     }
@@ -37,9 +40,9 @@ impl Display for LoxError {
             for item in stack {
                 let message = format!("\n\tin {}", item);
                 str += &message;
-            } 
+            }
         }
-        
+
         write!(f, "{}", str.red())
     }
 }
@@ -97,7 +100,7 @@ impl Logger {
         self.errors.push(error);
     }
 
-    pub fn result(self) -> Result<(), Box<dyn Error>> {
+    pub fn result(self) -> std::result::Result<(), Box<dyn Error>> {
         if self.has_errors() {
             Err(Box::new(LoxErrors::from(self.errors)))
         } else {

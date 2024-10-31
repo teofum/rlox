@@ -1,6 +1,6 @@
 use crate::rlox::ast::{Expr, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef, Var};
 use crate::rlox::environment::{Env, Environment, Heap};
-use crate::rlox::error::{ErrorType, Logger, LoxError};
+use crate::rlox::error::{ErrorType, Logger, LoxError, LoxResult};
 use crate::rlox::externals::clock;
 use crate::rlox::lookups::{Lookups, Symbol};
 use crate::rlox::token::{Token, TokenType};
@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 pub struct Interpreter {
     env: Rc<RefCell<Environment>>,
+    globals: Rc<RefCell<Environment>>,
     heap: Heap,
 }
 
@@ -20,7 +21,7 @@ impl Interpreter {
         let builtin_clock = heap.define(Value::Fun(Rc::new(Function::External(clock, "clock".to_string(), 0))));
         env.define(lookups.get("clock"), Some(builtin_clock));
 
-        Self { env, heap }
+        Self { globals: env.clone(), env, heap }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -32,7 +33,7 @@ impl Interpreter {
         }
     }
 
-    fn execute(&mut self, stmt: &Stmt) -> Result<Option<Value>, LoxError> {
+    fn execute(&mut self, stmt: &Stmt) -> LoxResult<Option<Value>> {
         let mut return_value = None;
         match stmt {
             Stmt::Expression(expr) => { self.eval(expr)?; }
@@ -101,15 +102,15 @@ impl Interpreter {
         Ok(return_value)
     }
 
-    fn eval(&mut self, expr: &Expr) -> Result<ValueOrRef, LoxError> {
+    fn eval(&mut self, expr: &Expr) -> LoxResult<ValueOrRef> {
         match expr {
             Expr::Literal(value) => Ok(value.clone().wrap()),
             Expr::Grouping(expr) => self.eval(expr),
-            Expr::Variable(var) => Ok(ValueOrRef::HeapRef(self.env.get(var)?)),
-            Expr::Assignment(var, expr) => {
+            Expr::Variable(var, depth) => self.get_variable(var, depth),
+            Expr::Assignment(var, expr, depth) => {
                 let value_ref = self.eval(expr)?;
                 let value = self.clone_value(value_ref)?;
-                self.assign(var, value)
+                self.assign(var, depth, value)
             }
             Expr::Unary(op, rhs) => {
                 let rhs_ref = self.eval(rhs)?;
@@ -181,7 +182,7 @@ impl Interpreter {
                 let callee = self.eval(callee)?;
                 let args = args.iter()
                     .map(|arg| self.eval(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<LoxResult<Vec<_>>>()?;
 
                 let callee = self.deref_value(&callee)?;
 
@@ -236,7 +237,7 @@ impl Interpreter {
         }
     }
 
-    fn deref_value<'a>(&'a self, value_or_ref: &'a ValueOrRef) -> Result<&'a Value, LoxError> {
+    fn deref_value<'a>(&'a self, value_or_ref: &'a ValueOrRef) -> LoxResult<&'a Value> {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
             ValueOrRef::StackRef(var) => {
@@ -247,7 +248,7 @@ impl Interpreter {
         }
     }
 
-    fn clone_value(&self, value_or_ref: ValueOrRef) -> Result<Value, LoxError> {
+    fn clone_value(&self, value_or_ref: ValueOrRef) -> LoxResult<Value> {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
             ValueOrRef::StackRef(var) => {
@@ -263,10 +264,28 @@ impl Interpreter {
         self.env.define(identifier, key);
     }
 
-    fn assign(&mut self, var: &Var, value: Value) -> Result<ValueOrRef, LoxError> {
-        let key = self.env.get(var)?;
+    fn assign(&mut self, var: &Var, depth: &Option<usize>, value: Value) -> LoxResult<ValueOrRef> {
+        let key = if let Some(depth) = depth {
+            self.env.get_at(var, *depth)?
+        } else {
+            self.globals.get(var)?
+        };
+        
         self.heap.assign(key, value);
-        self.env.assign(var, key)
+        
+        if let Some(depth) = depth {
+            self.env.assign_at(var, key, *depth)
+        } else {
+            self.globals.assign(var, key)
+        }
+    }
+
+    fn get_variable(&self, var: &Var, depth: &Option<usize>) -> LoxResult<ValueOrRef> {
+        if let Some(depth) = depth {
+            Ok(ValueOrRef::HeapRef(self.env.get_at(var, *depth)?))
+        } else {
+            Ok(ValueOrRef::HeapRef(self.globals.get(var)?))
+        }
     }
 }
 
@@ -278,7 +297,7 @@ fn is_truthy(value: &Value) -> bool {
     }
 }
 
-fn typecheck_numbers(values: (&Value, &Value), op: &Token) -> Result<(f64, f64), LoxError> {
+fn typecheck_numbers(values: (&Value, &Value), op: &Token) -> LoxResult<(f64, f64)> {
     if let (Value::Number(lhs), Value::Number(rhs)) = values {
         Ok((*lhs, *rhs))
     } else {
@@ -290,8 +309,8 @@ fn typecheck_numbers(values: (&Value, &Value), op: &Token) -> Result<(f64, f64),
     }
 }
 
-fn compare(op: &Token, lhs: &Value, rhs: &Value) -> Result<Value, LoxError> {
-    fn compare_impl<T>(op: &Token, lhs: T, rhs: T) -> Result<Value, LoxError>
+fn compare(op: &Token, lhs: &Value, rhs: &Value) -> LoxResult<Value> {
+    fn compare_impl<T>(op: &Token, lhs: T, rhs: T) -> LoxResult<Value>
     where
         T: PartialOrd,
     {
