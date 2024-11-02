@@ -14,13 +14,19 @@ impl DeclStatus {
     }
 }
 
+enum FunctionType {
+    None,
+    Function,
+}
+
 pub struct Resolver {
     scopes: Vec<HashMap<Symbol, DeclStatus>>,
+    current_function: FunctionType,
 }
 
 impl Resolver {
     pub fn new() -> Self {
-        Self { scopes: Vec::new() }
+        Self { scopes: Vec::new(), current_function: FunctionType::None }
     }
 
     pub fn resolve_stmts(&mut self, stmts: &mut Vec<Stmt>) -> LoxResult<()> {
@@ -47,7 +53,7 @@ impl Resolver {
             Stmt::Fun(var, params, body) => {
                 self.declare(&var.symbol)?;
                 self.define(&var.symbol);
-                self.resolve_fun(params, body)?;
+                self.resolve_fun(params, body, FunctionType::Function)?;
             }
             Stmt::If(condition, true_branch, false_branch) => {
                 self.resolve_expr(condition)?;
@@ -58,7 +64,13 @@ impl Resolver {
                 self.resolve_expr(condition)?;
                 self.resolve_stmt(body)?;
             }
-            Stmt::Expression(expr) | Stmt::Print(expr) | Stmt::Return(expr) => {
+            Stmt::Expression(expr) | Stmt::Print(expr) => {
+                self.resolve_expr(expr)?;
+            }
+            Stmt::Return(expr) => {
+                if let FunctionType::None = self.current_function {
+                    return Err(LoxError::new(ErrorType::Resolve, 0, "Return statement outside function body"));
+                }
                 self.resolve_expr(expr)?;
             }
         }
@@ -85,7 +97,7 @@ impl Resolver {
                 }
             }
             Expr::Lambda(params, body) => {
-                self.resolve_fun(params, body)?;
+                self.resolve_fun(params, body, FunctionType::Function)?;
             }
             Expr::Ternary(condition, if_true, if_false) => {
                 self.resolve_expr(condition)?;
@@ -112,14 +124,23 @@ impl Resolver {
             .map(|(i, _)| i);
     }
 
-    fn resolve_fun(&mut self, params: &Vec<Symbol>, body: &mut Vec<Stmt>) -> LoxResult<()> {
+    fn resolve_fun(
+        &mut self,
+        params: &Vec<Symbol>,
+        body: &mut Vec<Stmt>,
+        function_type: FunctionType,
+    ) -> LoxResult<()> {
+        let enclosing_function = std::mem::replace(&mut self.current_function, function_type);
         self.begin_scope();
+
         for param in params {
             self.declare(param)?;
             self.define(param);
         }
         self.resolve_stmts(body)?;
+
         self.end_scope();
+        self.current_function = enclosing_function;
         Ok(())
     }
 
