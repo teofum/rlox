@@ -1,17 +1,22 @@
 use crate::rlox::ast::{Expr, Stmt};
 use crate::rlox::error::{ErrorType, LoxError, LoxResult};
 use crate::rlox::lookups::Symbol;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-enum DeclStatus {
-    Uninitialized,
-    Initialized,
+struct VarStatus {
+    initialized: bool,
+    used: bool,
 }
 
-impl DeclStatus {
-    fn is_uninitialized(decl_status: &Self) -> bool {
-        matches!(decl_status, Self::Uninitialized)
+impl VarStatus {
+    fn new() -> Self {
+        Self { initialized: false, used: false }
     }
+}
+
+impl Default for VarStatus {
+    fn default() -> Self { Self::new() }
 }
 
 enum FunctionType {
@@ -20,7 +25,7 @@ enum FunctionType {
 }
 
 pub struct Resolver {
-    scopes: Vec<HashMap<Symbol, DeclStatus>>,
+    scopes: Vec<HashMap<Symbol, VarStatus>>,
     current_function: FunctionType,
 }
 
@@ -41,7 +46,7 @@ impl Resolver {
             Stmt::Block(stmts) => {
                 self.begin_scope();
                 self.resolve_stmts(stmts)?;
-                self.end_scope();
+                self.end_scope()?;
             }
             Stmt::Var(symbol, initializer) => {
                 self.declare(symbol)?;
@@ -80,7 +85,7 @@ impl Resolver {
     fn resolve_expr(&mut self, expr: &mut Expr) -> LoxResult<()> {
         match expr {
             Expr::Variable(var, depth) => {
-                if self.scopes.last().is_some_and(|scope| scope.get(&var.symbol).is_some_and(DeclStatus::is_uninitialized)) {
+                if self.scopes.last().is_some_and(|scope| scope.get(&var.symbol).is_some_and(|var| !var.initialized)) {
                     return Err(LoxError::new(ErrorType::Resolve, 0, "Local variable referenced in its own initializer"));
                 } else {
                     self.resolve_local(var.symbol, depth);
@@ -116,7 +121,8 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_local(&self, symbol: Symbol, depth: &mut Option<usize>) {
+    fn resolve_local(&mut self, symbol: Symbol, depth: &mut Option<usize>) {
+        self.mark_used(&symbol);
         *depth = self.scopes.iter()
             .rev()
             .enumerate()
@@ -139,7 +145,7 @@ impl Resolver {
         }
         self.resolve_stmts(body)?;
 
-        self.end_scope();
+        self.end_scope()?;
         self.current_function = enclosing_function;
         Ok(())
     }
@@ -148,8 +154,15 @@ impl Resolver {
         self.scopes.push(HashMap::new())
     }
 
-    fn end_scope(&mut self) {
-        self.scopes.pop();
+    fn end_scope(&mut self) -> LoxResult<()> {
+        if let Some(scope) = self.scopes.pop() {
+            if scope.values().any(|var| !var.used) {
+                // TODO better error reporting, should have the var name here
+                return Err(LoxError::new(ErrorType::Resolve, 0, "Unused variable in local scope"));
+            }
+        }
+
+        Ok(())
     }
 
     fn declare(&mut self, symbol: &Symbol) -> LoxResult<()> {
@@ -157,14 +170,24 @@ impl Resolver {
             if scope.contains_key(symbol) {
                 return Err(LoxError::new(ErrorType::Resolve, 0, "Shadowing of variable in the same scope"));
             }
-            scope.insert(*symbol, DeclStatus::Uninitialized);
+            scope.insert(*symbol, VarStatus::default());
         }
         Ok(())
     }
 
     fn define(&mut self, symbol: &Symbol) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(*symbol, DeclStatus::Initialized);
+            if let Entry::Occupied(mut e) = scope.entry(*symbol) {
+                e.get_mut().initialized = true;
+            }
+        }
+    }
+
+    fn mark_used(&mut self, symbol: &Symbol) {
+        if let Some(scope) = self.scopes.last_mut() {
+            if let Entry::Occupied(mut e) = scope.entry(*symbol) {
+                e.get_mut().used = true;
+            }
         }
     }
 }
