@@ -38,14 +38,14 @@ impl Resolver {
                 self.end_scope();
             }
             Stmt::Var(symbol, initializer) => {
-                self.declare(symbol);
+                self.declare(symbol)?;
                 if let Some(initializer) = initializer {
                     self.resolve_expr(initializer)?;
                 }
                 self.define(symbol);
             }
             Stmt::Fun(var, params, body) => {
-                self.declare(&var.symbol);
+                self.declare(&var.symbol)?;
                 self.define(&var.symbol);
                 self.resolve_fun(params, body)?;
             }
@@ -115,7 +115,7 @@ impl Resolver {
     fn resolve_fun(&mut self, params: &Vec<Symbol>, body: &mut Vec<Stmt>) -> LoxResult<()> {
         self.begin_scope();
         for param in params {
-            self.declare(param);
+            self.declare(param)?;
             self.define(param);
         }
         self.resolve_stmts(body)?;
@@ -131,10 +131,14 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, symbol: &Symbol) {
+    fn declare(&mut self, symbol: &Symbol) -> LoxResult<()> {
         if let Some(scope) = self.scopes.last_mut() {
+            if scope.contains_key(symbol) {
+                return Err(LoxError::new(ErrorType::Resolve, 0, "Shadowing of variable in the same scope"));
+            }
             scope.insert(*symbol, DeclStatus::Uninitialized);
         }
+        Ok(())
     }
 
     fn define(&mut self, symbol: &Symbol) {

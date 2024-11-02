@@ -2,7 +2,7 @@ use colored::Colorize;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-pub type LoxResult<T> = std::result::Result<T, LoxError>;
+pub type LoxResult<T> = Result<T, LoxError>;
 
 #[derive(Debug)]
 pub enum ErrorType {
