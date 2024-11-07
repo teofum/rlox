@@ -64,6 +64,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Fun(Rc<Function>),
+    Class(String),
 }
 
 impl Display for Value {
@@ -74,6 +75,7 @@ impl Display for Value {
             Value::Number(num) => write!(f, "{}", num),
             Value::String(str) => write!(f, "{}", str),
             Value::Fun(fun) => write!(f, "fun {}", fun.name()),
+            Value::Class(name) => write!(f, "class {}", name),
         }
     }
 }
@@ -178,6 +180,7 @@ pub enum Stmt {
     Return(Expr),
     Var(Symbol, Option<Expr>),
     Fun(Var, Vec<Symbol>, Vec<Stmt>),
+    Class(Var, Vec<Stmt>),
 }
 
 impl Stmt {

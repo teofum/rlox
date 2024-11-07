@@ -13,8 +13,8 @@ pub trait Env {
     fn define(&mut self, name: Symbol, value_key: Option<VariableKey>);
     fn assign(&mut self, var: &Var, value_key: VariableKey) -> Result<ValueOrRef, LoxError>;
     fn assign_at(&mut self, var: &Var, value_key: VariableKey, depth: usize) -> Result<ValueOrRef, LoxError>;
-    fn get(&self, var: &Var) -> Result<VariableKey, LoxError>;
-    fn get_at(&self, var: &Var, depth: usize) -> Result<VariableKey, LoxError>;
+    fn get(&self, var: &Var) -> Result<Option<VariableKey>, LoxError>;
+    fn get_at(&self, var: &Var, depth: usize) -> Result<Option<VariableKey>, LoxError>;
     
     fn is_global(&self) -> bool;
 }
@@ -71,15 +71,15 @@ impl Env for Environment {
         }
     }
 
-    fn get(&self, var: &Var) -> Result<VariableKey, LoxError> {
+    fn get(&self, var: &Var) -> Result<Option<VariableKey>, LoxError> {
         if let Some(value) = self.vars.get(&var.symbol) {
-            value.ok_or_else(|| get_error(0, &var.name, "uninitialized"))
+            Ok(*value)
         } else {
             Err(get_error(0, &var.name, "undefined"))
         }
     }
 
-    fn get_at(&self, var: &Var, depth: usize) -> Result<VariableKey, LoxError> {
+    fn get_at(&self, var: &Var, depth: usize) -> Result<Option<VariableKey>, LoxError> {
         if depth == 0 {
             self.get(var)
         } else if let Some(enclosing) = &self.enclosing {
@@ -107,11 +107,11 @@ impl Env for Rc<RefCell<Environment>> {
         self.borrow_mut().assign_at(var, value_key, depth)
     }
 
-    fn get(&self, var: &Var) -> Result<VariableKey, LoxError> {
+    fn get(&self, var: &Var) -> Result<Option<VariableKey>, LoxError> {
         self.borrow().get(var)
     }
 
-    fn get_at(&self, var: &Var, depth: usize) -> Result<VariableKey, LoxError> {
+    fn get_at(&self, var: &Var, depth: usize) -> Result<Option<VariableKey>, LoxError> {
         self.borrow().get_at(var, depth)
     }
 

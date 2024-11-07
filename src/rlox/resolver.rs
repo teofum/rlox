@@ -60,6 +60,10 @@ impl Resolver {
                 self.define(&var.symbol);
                 self.resolve_fun(params, body, FunctionType::Function)?;
             }
+            Stmt::Class(var, _) => {
+                self.declare(&var.symbol)?;
+                self.define(&var.symbol);
+            }
             Stmt::If(condition, true_branch, false_branch) => {
                 self.resolve_expr(condition)?;
                 self.resolve_stmt(true_branch)?;

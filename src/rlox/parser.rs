@@ -23,6 +23,7 @@ impl<'a> StmtIter<'a> {
         let result = match self.next_token_if(TokenType::is_declaration) {
             Some(token) if token.token_type == TokenType::Var => self.var_declaration(),
             Some(token) if token.token_type == TokenType::Fun => self.fun_declaration(),
+            Some(token) if token.token_type == TokenType::Class => self.class_declaration(),
             Some(_) => todo!("interpret: Unsupported declaration type"),
             None => self.statement(),
         };
@@ -61,6 +62,21 @@ impl<'a> StmtIter<'a> {
         } else {
             Err(self.error(brace.line, "Expected function body"))
         }
+    }
+
+    fn class_declaration(&mut self) -> LoxResult<Stmt> {
+        let name = self.expect_token(TokenType::Identifier, 0, "Expected class name after \"class\"")?;
+        self.expect_token(TokenType::LeftBrace, name.line, "Expected '{' after class name")?;
+
+        let mut methods = Vec::new();
+        while self.tokens.peek().is_some_and(|tk| tk.token_type != TokenType::RightBrace) {
+            methods.push(self.fun_declaration()?);
+        }
+
+        self.expect_token(TokenType::RightBrace, name.line, "Expected '}' after class body")?;
+
+        let var = Var { symbol: self.lookups.get(&name.lexeme), name: name.lexeme };
+        Ok(Stmt::Class(var, methods))
     }
 
     fn statement(&mut self) -> LoxResult<Stmt> {

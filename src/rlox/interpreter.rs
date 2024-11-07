@@ -97,6 +97,11 @@ impl Interpreter {
                 )));
                 self.define(var.symbol, Some(fun));
             }
+            Stmt::Class(var, methods) => {
+                self.define(var.symbol, None);
+                let class = Value::Class(var.name.clone());
+                self.assign(var, &Some(0), class)?;
+            }
         }
 
         Ok(return_value)
@@ -241,8 +246,12 @@ impl Interpreter {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
             ValueOrRef::StackRef(var) => {
-                let key = self.env.get(var)?;
-                Ok(self.heap.get(key))
+                if let Some(key) = self.env.get(var)? {
+                    Ok(self.heap.get(key))
+                } else {
+                    let message = format!("Variable \"{}\" is uninitialized", var.name);
+                    Err(LoxError::new(ErrorType::Runtime, 0, &message))
+                }
             }
             ValueOrRef::HeapRef(key) => Ok(self.heap.get(*key)),
         }
@@ -252,8 +261,12 @@ impl Interpreter {
         match value_or_ref {
             ValueOrRef::Value(v) => Ok(v),
             ValueOrRef::StackRef(var) => {
-                let key = self.env.get(&var)?;
-                Ok(self.heap.get(key).clone())
+                if let Some(key) = self.env.get(&var)? {
+                    Ok(self.heap.get(key).clone())
+                } else {
+                    let message = format!("Variable \"{}\" is uninitialized", var.name);
+                    Err(LoxError::new(ErrorType::Runtime, 0, &message))
+                }
             }
             ValueOrRef::HeapRef(key) => Ok(self.heap.get(key).clone()),
         }
@@ -270,9 +283,12 @@ impl Interpreter {
         } else {
             self.globals.get(var)?
         };
-        
-        self.heap.assign(key, value);
-        
+
+        let key = match key {
+            Some(key) => self.heap.assign(key, value),
+            None => self.heap.define(value),
+        };
+
         if let Some(depth) = depth {
             self.env.assign_at(var, key, *depth)
         } else {
@@ -281,11 +297,18 @@ impl Interpreter {
     }
 
     fn get_variable(&self, var: &Var, depth: &Option<usize>) -> LoxResult<ValueOrRef> {
-        if let Some(depth) = depth {
-            Ok(ValueOrRef::HeapRef(self.env.get_at(var, *depth)?))
+        let key = if let Some(depth) = depth {
+            self.env.get_at(var, *depth)?
         } else {
-            Ok(ValueOrRef::HeapRef(self.globals.get(var)?))
-        }
+            self.globals.get(var)?
+        };
+
+        let key = key.ok_or_else(|| {
+            let message = format!("Variable \"{}\" is uninitialized", var.name);
+            LoxError::new(ErrorType::Runtime, 0, &message)
+        })?;
+
+        Ok(ValueOrRef::HeapRef(key))
     }
 }
 
