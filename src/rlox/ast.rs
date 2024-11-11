@@ -1,25 +1,33 @@
 use crate::rlox::environment::{Environment, VariableKey};
-use crate::rlox::error::LoxResult;
+use crate::rlox::error::{ErrorType, LoxError, LoxResult};
 use crate::rlox::interpreter::Interpreter;
 use crate::rlox::lookups::Symbol;
 use crate::rlox::token::Token;
 use std::cell::RefCell;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
 
-pub type ExternalFunction = fn(&Interpreter, &Vec<ValueOrRef>) -> LoxResult<Value>;
+pub type ExternalFunctionImpl = fn(&Interpreter, &Vec<ValueOrRef>) -> LoxResult<Value>;
+
+#[derive(Debug, PartialEq)]
+pub struct ExternalFunction {
+    name: String,
+    arity: u8,
+    fun: ExternalFunctionImpl,
+}
+
+impl ExternalFunction {
+    pub fn new(name: &str, arity: u8, fun: ExternalFunctionImpl) -> Self {
+        Self { name: name.to_string(), arity, fun }
+    }
+}
 
 #[derive(Debug)]
 pub struct LoxFunction {
+    pub name: String,
     pub params: Vec<Symbol>,
     pub body: Vec<Stmt>,
     pub closure: Rc<RefCell<Environment>>,
-}
-
-impl LoxFunction {
-    pub fn arity(&self) -> usize {
-        self.params.len()
-    }
 }
 
 impl PartialEq for LoxFunction {
@@ -27,32 +35,81 @@ impl PartialEq for LoxFunction {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Class {
+    pub name: String,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Function {
-    External(ExternalFunction, String, u8),
-    Lox(LoxFunction, String),
+    Lox(LoxFunction),
+    Constructor(Rc<Class>, LoxFunction),
+    External(ExternalFunction),
 }
 
 impl Function {
-    pub fn define(
+    pub fn define_fun(
         name: String,
         params: Vec<Symbol>,
         body: Vec<Stmt>,
         closure: Rc<RefCell<Environment>>,
     ) -> Self {
-        Self::Lox(LoxFunction { params, body, closure }, name)
+        Self::Lox(LoxFunction { name, params, body, closure })
+    }
+
+    pub fn define_ctor(
+        class: Class,
+        name: String,
+        params: Vec<Symbol>,
+        body: Vec<Stmt>,
+        closure: Rc<RefCell<Environment>>,
+    ) -> Self {
+        Self::Constructor(Rc::new(class), LoxFunction { name, params, body, closure })
     }
 
     pub fn arity(&self) -> usize {
         match self {
-            Function::Lox(f, _) => f.arity(),
-            Function::External(_, _, arity) => *arity as usize,
+            Function::Lox(f) => f.params.len(),
+            Function::Constructor(_, f) => f.params.len(),
+            Function::External(f) => f.arity as usize,
         }
     }
 
     pub fn name(&self) -> &str {
         match self {
-            Function::Lox(_, name) => name,
-            Function::External(_, name, _) => name,
+            Function::Lox(f) => &f.name,
+            Function::Constructor(_, f) => &f.name,
+            Function::External(f) => &f.name,
+        }
+    }
+
+    pub fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: Vec<ValueOrRef>,
+        line: usize,
+    ) -> LoxResult<Value> {
+        if args.len() == self.arity() {
+            match self {
+                Function::Lox(fun) => interpreter.call_fun(fun, args),
+                Function::Constructor(class, ctor) => interpreter.create_object(class, ctor, args),
+                Function::External(ExternalFunction { fun, .. }) => fun(interpreter, &args),
+            }
+        } else {
+            let message = format!(
+                "{} expected {} arguments, got {}",
+                self, self.arity(), args.len()
+            );
+            Err(LoxError::new(ErrorType::Runtime, line, &message))
+        }
+    }
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Function::Lox(fun) => write!(f, "fun {}", fun.name),
+            Function::Constructor(class, _) => write!(f, "ctor {}", class.name),
+            Function::External(fun) => write!(f, "(extern) fun {}", fun.name),
         }
     }
 }
@@ -64,7 +121,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Fun(Rc<Function>),
-    Class(String),
+    Object(Rc<Class>),
 }
 
 impl Display for Value {
@@ -74,8 +131,8 @@ impl Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Number(num) => write!(f, "{}", num),
             Value::String(str) => write!(f, "{}", str),
-            Value::Fun(fun) => write!(f, "fun {}", fun.name()),
-            Value::Class(name) => write!(f, "class {}", name),
+            Value::Fun(fun) => write!(f, "{}", fun),
+            Value::Object(class) => write!(f, "{}", class.name),
         }
     }
 }

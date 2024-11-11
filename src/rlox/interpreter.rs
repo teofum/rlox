@@ -1,7 +1,7 @@
-use crate::rlox::ast::{Expr, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef, Var};
+use crate::rlox::ast::{Class, Expr, ExternalFunction, Function, LoxFunction, Stmt, ToValueOrRef, Value, ValueOrRef, Var};
 use crate::rlox::environment::{Env, Environment, Heap};
 use crate::rlox::error::{ErrorType, Logger, LoxError, LoxResult};
-use crate::rlox::externals::clock;
+use crate::rlox::externals;
 use crate::rlox::lookups::{Lookups, Symbol};
 use crate::rlox::token::{Token, TokenType};
 use std::cell::RefCell;
@@ -18,8 +18,11 @@ impl Interpreter {
         let mut heap = Heap::new();
         let mut env = Environment::new("<global scope>".to_string());
 
-        let builtin_clock = heap.define(Value::Fun(Rc::new(Function::External(clock, "clock".to_string(), 0))));
-        env.define(lookups.get("clock"), Some(builtin_clock));
+        let clock_fn = Function::External(ExternalFunction::new("clock", 0, externals::clock));
+        env.define(
+            lookups.get(clock_fn.name()),
+            Some(heap.define(Value::Fun(Rc::new(clock_fn)))),
+        );
 
         Self { globals: env.clone(), env, heap }
     }
@@ -31,6 +34,34 @@ impl Interpreter {
                 break;
             }
         }
+    }
+
+    pub fn call_fun(&mut self, fun: &LoxFunction, args: Vec<ValueOrRef>) -> LoxResult<Value> {
+        let previous_env = self.env.clone();
+
+        self.env = Environment::from("function ".to_string() + &fun.name, fun.closure.clone());
+        for (param, arg) in fun.params.iter().zip(args) {
+            let arg_value = self.clone_value(arg)?;
+            self.define(*param, Some(arg_value));
+        }
+
+        let mut return_value = None;
+        for stmt in &fun.body {
+            return_value = self.execute(stmt)?;
+            if return_value.is_some() { break; }
+        }
+
+        self.env = previous_env;
+        Ok(return_value.unwrap_or(Value::Nil))
+    }
+
+    pub fn create_object(
+        &mut self, class: &Rc<Class>,
+        ctor: &LoxFunction,
+        args: Vec<ValueOrRef>,
+    ) -> LoxResult<Value> {
+        // TODO ctor
+        Ok(Value::Object(class.clone()))
     }
 
     fn execute(&mut self, stmt: &Stmt) -> LoxResult<Option<Value>> {
@@ -87,19 +118,23 @@ impl Interpreter {
                 self.define(*identifier, value);
             }
             Stmt::Fun(var, params, body) => {
-                let fun = Value::Fun(Rc::new(Function::Lox(
-                    LoxFunction {
-                        params: params.clone(),
-                        body: body.clone(),
-                        closure: self.env.clone(),
-                    },
+                let fun = Value::Fun(Rc::new(Function::define_fun(
                     var.name.to_string(),
+                    params.clone(),
+                    body.clone(),
+                    self.env.clone(),
                 )));
                 self.define(var.symbol, Some(fun));
             }
             Stmt::Class(var, methods) => {
                 self.define(var.symbol, None);
-                let class = Value::Class(var.name.clone());
+                let class = Value::Fun(Rc::new(Function::define_ctor(
+                    Class { name: var.name.to_string() },
+                    var.name.to_string(),
+                    Vec::new(),
+                    Vec::new(),
+                    self.env.clone(),
+                )));
                 self.assign(var, &Some(0), class)?;
             }
         }
@@ -194,48 +229,18 @@ impl Interpreter {
                 if let Value::Fun(fun) = callee {
                     let fun = fun.clone();
                     let fun = fun.as_ref();
-                    if args.len() != fun.arity() {
-                        let message = format!(
-                            "Function {} expected {} arguments, got {}",
-                            fun.name(), fun.arity(), args.len()
-                        );
-                        Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
-                    } else {
-                        match fun {
-                            Function::External(f_impl, _, _) => f_impl(self, &args).wrap(),
-                            Function::Lox(f_impl, _) => {
-                                let previous_env = self.env.clone();
-
-                                self.env = Environment::from("function ".to_string() + fun.name(), f_impl.closure.clone());
-                                for (param, arg) in f_impl.params.iter().zip(args) {
-                                    let arg_value = self.clone_value(arg)?;
-                                    self.define(*param, Some(arg_value));
-                                }
-
-                                let mut return_value = None;
-                                for stmt in &f_impl.body {
-                                    return_value = self.execute(stmt)?;
-                                    if return_value.is_some() { break; }
-                                }
-
-                                self.env = previous_env;
-                                Ok(return_value.unwrap_or(Value::Nil).wrap())
-                            }
-                        }
-                    }
+                    fun.call(self, args, paren.line).wrap()
                 } else {
                     let message = format!("{} is not a callable expression", callee);
                     Err(LoxError::new(ErrorType::Runtime, paren.line, &message))
                 }
             }
             Expr::Lambda(params, body) => {
-                let fun = Value::Fun(Rc::new(Function::Lox(
-                    LoxFunction {
-                        params: params.clone(),
-                        body: body.clone(),
-                        closure: self.env.clone(),
-                    },
+                let fun = Value::Fun(Rc::new(Function::define_fun(
                     "<anonymous function>".to_string(),
+                    params.clone(),
+                    body.clone(),
+                    self.env.clone(),
                 )));
                 Ok(ValueOrRef::Value(fun))
             }
