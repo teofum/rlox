@@ -46,9 +46,8 @@ impl Class {
         Self { name, methods }
     }
 
-    pub fn get_method(&self, method: &Var) -> Option<Value> {
+    pub fn get_method(&self, method: &Var) -> Option<&LoxFunction> {
         self.methods.get(&method.symbol)
-            .map(|method| Value::Fun(Rc::new(Function::Lox(method.clone()))))
     }
 }
 
@@ -207,6 +206,7 @@ pub enum Expr {
     Property(Box<Expr>, Var),
     SetProperty(Box<Expr>, Var, Box<Expr>),
     Lambda(Vec<Symbol>, Vec<Stmt>),
+    This(Symbol, Option<usize>),
 }
 
 // Helpers for boxing expressions

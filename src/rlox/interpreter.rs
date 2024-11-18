@@ -12,6 +12,7 @@ pub struct Interpreter {
     env: Rc<RefCell<Environment>>,
     globals: Rc<RefCell<Environment>>,
     heap: Heap,
+    this: Var,
 }
 
 impl Interpreter {
@@ -25,7 +26,9 @@ impl Interpreter {
             Some(heap.define(Value::Fun(Rc::new(clock_fn)))),
         );
 
-        Self { globals: env.clone(), env, heap }
+        let this = Var { symbol: lookups.get("this"), name: "this".to_string() };
+
+        Self { globals: env.clone(), env, heap, this }
     }
 
     pub fn interpret(&mut self, stmt_iter: &mut dyn Iterator<Item=Stmt>, logger: &mut Logger) {
@@ -129,7 +132,7 @@ impl Interpreter {
             }
             Stmt::Class(var, methods) => {
                 self.define(var.symbol, None);
-                
+
                 let mut method_map = HashMap::new();
                 for method in methods {
                     if let Stmt::Fun(var, params, body) = method {
@@ -142,7 +145,7 @@ impl Interpreter {
                         method_map.insert(var.symbol, method);
                     }
                 }
-                
+
                 let class = Value::Fun(Rc::new(Function::define_ctor(
                     Class::new(var.name.to_string(), method_map),
                     var.name.to_string(),
@@ -162,6 +165,7 @@ impl Interpreter {
             Expr::Literal(value) => Ok(value.clone().wrap()),
             Expr::Grouping(expr) => self.eval(expr),
             Expr::Variable(var, depth) => self.get_variable(var, depth),
+            Expr::This(_, depth) => self.get_variable(&self.this, depth),
             Expr::Assignment(var, expr, depth) => {
                 let value_ref = self.eval(expr)?;
                 let value = self.clone_value(value_ref)?;
@@ -239,7 +243,24 @@ impl Interpreter {
                     if let Some(value) = fields.get(&property.symbol) {
                         Ok(value.clone().wrap())
                     } else if let Some(method) = class.get_method(property) {
-                        Ok(method.wrap())
+                        let name = method.closure.borrow().name();
+                        let method = method.clone();
+                        let closure = Environment::from(name, method.closure);
+                        
+                        let key = match object_ref {
+                            ValueOrRef::Value(v) => Some(self.heap.define(v)),
+                            ValueOrRef::StackRef(var) => self.env.get(&var)?,
+                            ValueOrRef::HeapRef(key) => Some(key),
+                        };
+                        closure.borrow_mut().define(self.this.symbol, key);
+
+                        let fun = LoxFunction {
+                            name: method.name,
+                            params: method.params,
+                            body: method.body,
+                            closure,
+                        };
+                        Ok(Value::Fun(Rc::new(Function::Lox(fun))).wrap())
                     } else {
                         let message = format!("Property '{}' is undefined", property.name);
                         Err(LoxError::new(ErrorType::Runtime, 0, &message))

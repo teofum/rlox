@@ -340,6 +340,7 @@ impl<'a> StmtIter<'a> {
                     let var = Var { symbol: self.lookups.get(&token.lexeme), name: token.lexeme };
                     Ok(Expr::Variable(var, None))
                 }
+                TokenType::This => Ok(Expr::This(self.lookups.get("this"), None)),
 
                 TokenType::Fun => self.expr_lambda(token),
                 TokenType::LeftParen => {

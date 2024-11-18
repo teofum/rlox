@@ -42,8 +42,8 @@ impl Environment {
         Rc::new(RefCell::new(env))
     }
 
-    pub fn name(self) -> String {
-        self.name
+    pub fn name(&self) -> String {
+        self.name.to_string()
     }
 }
 

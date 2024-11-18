@@ -67,7 +67,7 @@ fn run(source: &str, interpreter: &mut Interpreter, lookups: &mut Lookups) -> Re
     }
 
     let mut runtime_logger = Logger::new();
-    let mut resolver = Resolver::new();
+    let mut resolver = Resolver::new(lookups);
     if let Err(resolve_error) = resolver.resolve_stmts(&mut ast) {
         runtime_logger.log(resolve_error);
         return runtime_logger.result();
