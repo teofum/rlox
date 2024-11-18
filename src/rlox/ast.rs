@@ -23,7 +23,7 @@ impl ExternalFunction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoxFunction {
     pub name: String,
     pub params: Vec<Symbol>,
@@ -38,6 +38,18 @@ impl PartialEq for LoxFunction {
 #[derive(Debug, PartialEq)]
 pub struct Class {
     pub name: String,
+    methods: HashMap<Symbol, LoxFunction>,
+}
+
+impl Class {
+    pub fn new(name: String, methods: HashMap<Symbol, LoxFunction>) -> Self {
+        Self { name, methods }
+    }
+
+    pub fn get_method(&self, method: &Var) -> Option<Value> {
+        self.methods.get(&method.symbol)
+            .map(|method| Value::Fun(Rc::new(Function::Lox(method.clone()))))
+    }
 }
 
 #[derive(Debug, PartialEq)]

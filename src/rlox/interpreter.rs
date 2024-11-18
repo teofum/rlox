@@ -58,8 +58,8 @@ impl Interpreter {
 
     pub fn create_object(
         &mut self, class: &Rc<Class>,
-        ctor: &LoxFunction,
-        args: Vec<ValueOrRef>,
+        _ctor: &LoxFunction,
+        _args: Vec<ValueOrRef>,
     ) -> LoxResult<Value> {
         // TODO ctor
         Ok(Value::Object(class.clone(), HashMap::new()))
@@ -129,8 +129,22 @@ impl Interpreter {
             }
             Stmt::Class(var, methods) => {
                 self.define(var.symbol, None);
+                
+                let mut method_map = HashMap::new();
+                for method in methods {
+                    if let Stmt::Fun(var, params, body) = method {
+                        let method = LoxFunction {
+                            name: var.name.to_string(),
+                            params: params.clone(),
+                            body: body.clone(),
+                            closure: self.env.clone(),
+                        };
+                        method_map.insert(var.symbol, method);
+                    }
+                }
+                
                 let class = Value::Fun(Rc::new(Function::define_ctor(
-                    Class { name: var.name.to_string() },
+                    Class::new(var.name.to_string(), method_map),
                     var.name.to_string(),
                     Vec::new(),
                     Vec::new(),
@@ -221,13 +235,15 @@ impl Interpreter {
             }
             Expr::Property(object, property) => {
                 let object_ref = self.eval(object)?;
-                if let Value::Object(_, fields) = self.deref_value(&object_ref)? {
-                    fields.get(&property.symbol)
-                        .map(|value| value.clone().wrap())
-                        .ok_or_else(|| {
-                            let message = format!("Property '{}' is undefined", property.name);
-                            LoxError::new(ErrorType::Runtime, 0, &message)
-                        })
+                if let Value::Object(class, fields) = self.deref_value(&object_ref)? {
+                    if let Some(value) = fields.get(&property.symbol) {
+                        Ok(value.clone().wrap())
+                    } else if let Some(method) = class.get_method(property) {
+                        Ok(method.wrap())
+                    } else {
+                        let message = format!("Property '{}' is undefined", property.name);
+                        Err(LoxError::new(ErrorType::Runtime, 0, &message))
+                    }
                 } else {
                     Err(LoxError::new(ErrorType::Runtime, 0, "Invalid property access"))
                 }
