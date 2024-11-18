@@ -4,6 +4,7 @@ use crate::rlox::interpreter::Interpreter;
 use crate::rlox::lookups::Symbol;
 use crate::rlox::token::Token;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
 
@@ -121,7 +122,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Fun(Rc<Function>),
-    Object(Rc<Class>),
+    Object(Rc<Class>, HashMap<Symbol, Value>),
 }
 
 impl Display for Value {
@@ -132,7 +133,7 @@ impl Display for Value {
             Value::Number(num) => write!(f, "{}", num),
             Value::String(str) => write!(f, "{}", str),
             Value::Fun(fun) => write!(f, "{}", fun),
-            Value::Object(class) => write!(f, "{}", class.name),
+            Value::Object(class, fields) => write!(f, "{} {:?}", class.name, fields),
         }
     }
 }
@@ -191,6 +192,8 @@ pub enum Expr {
     Assignment(Var, Box<Expr>, Option<usize>),
     Logical(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Token, Vec<Expr>),
+    Property(Box<Expr>, Var),
+    SetProperty(Box<Expr>, Var, Box<Expr>),
     Lambda(Vec<Symbol>, Vec<Stmt>),
 }
 
@@ -222,6 +225,10 @@ impl Expr {
 
     pub fn new_call(callee: Expr, paren: Token, args: Vec<Expr>) -> Self {
         Self::Call(Box::new(callee), paren, args)
+    }
+
+    pub fn new_property(object: Expr, name: Var) -> Self {
+        Self::Property(Box::new(object), name)
     }
 
     // TODO get expr line

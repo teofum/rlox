@@ -105,6 +105,13 @@ impl Resolver {
                     self.resolve_expr(arg)?;
                 }
             }
+            Expr::Property(object, _) => {
+                self.resolve_expr(object)?;
+            }
+            Expr::SetProperty(object, _, value) => {
+                self.resolve_expr(value)?;
+                self.resolve_expr(object)?;
+            }
             Expr::Lambda(params, body) => {
                 self.resolve_fun(params, body, FunctionType::Function)?;
             }

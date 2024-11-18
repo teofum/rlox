@@ -144,4 +144,8 @@ impl Heap {
     pub fn get(&self, key: VariableKey) -> &Value {
         &self.data[key]
     }
+
+    pub fn get_mut(&mut self, key: VariableKey) -> &mut Value {
+        &mut self.data[key]
+    }
 }

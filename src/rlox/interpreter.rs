@@ -5,6 +5,7 @@ use crate::rlox::externals;
 use crate::rlox::lookups::{Lookups, Symbol};
 use crate::rlox::token::{Token, TokenType};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Interpreter {
@@ -61,7 +62,7 @@ impl Interpreter {
         args: Vec<ValueOrRef>,
     ) -> LoxResult<Value> {
         // TODO ctor
-        Ok(Value::Object(class.clone()))
+        Ok(Value::Object(class.clone(), HashMap::new()))
     }
 
     fn execute(&mut self, stmt: &Stmt) -> LoxResult<Option<Value>> {
@@ -218,6 +219,31 @@ impl Interpreter {
                 let cond_value = is_truthy(self.deref_value(&cond_value_ref)?);
                 self.eval(if cond_value { if_true } else { if_false })
             }
+            Expr::Property(object, property) => {
+                let object_ref = self.eval(object)?;
+                if let Value::Object(_, fields) = self.deref_value(&object_ref)? {
+                    fields.get(&property.symbol)
+                        .map(|value| value.clone().wrap())
+                        .ok_or_else(|| {
+                            let message = format!("Property '{}' is undefined", property.name);
+                            LoxError::new(ErrorType::Runtime, 0, &message)
+                        })
+                } else {
+                    Err(LoxError::new(ErrorType::Runtime, 0, "Invalid property access"))
+                }
+            }
+            Expr::SetProperty(object, property, value) => {
+                let mut object_ref = self.eval(object)?;
+                let value_ref = self.eval(value)?;
+                let value = self.clone_value(value_ref)?;
+
+                if let Value::Object(_, fields) = self.deref_value_mut(&mut object_ref)? {
+                    fields.insert(property.symbol, value.clone());
+                    Ok(value.wrap())
+                } else {
+                    Err(LoxError::new(ErrorType::Runtime, 0, "Invalid property access"))
+                }
+            }
             Expr::Call(callee, paren, args) => {
                 let callee = self.eval(callee)?;
                 let args = args.iter()
@@ -259,6 +285,21 @@ impl Interpreter {
                 }
             }
             ValueOrRef::HeapRef(key) => Ok(self.heap.get(*key)),
+        }
+    }
+
+    fn deref_value_mut<'a>(&'a mut self, value_or_ref: &'a mut ValueOrRef) -> LoxResult<&'a mut Value> {
+        match value_or_ref {
+            ValueOrRef::Value(v) => Ok(v),
+            ValueOrRef::StackRef(var) => {
+                if let Some(key) = self.env.get(var)? {
+                    Ok(self.heap.get_mut(key))
+                } else {
+                    let message = format!("Variable \"{}\" is uninitialized", var.name);
+                    Err(LoxError::new(ErrorType::Runtime, 0, &message))
+                }
+            }
+            ValueOrRef::HeapRef(key) => Ok(self.heap.get_mut(*key)),
         }
     }
 

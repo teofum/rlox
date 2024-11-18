@@ -224,6 +224,8 @@ impl<'a> StmtIter<'a> {
 
             if let Expr::Variable(var, None) = expr {
                 Ok(Expr::new_assignment(var, value))
+            } else if let Expr::Property(object, var) = expr {
+                Ok(Expr::SetProperty(object, var, Box::new(value)))
             } else {
                 Err(self.error(eq.line, "Invalid assignment target"))
             }
@@ -300,18 +302,26 @@ impl<'a> StmtIter<'a> {
     fn expr_call(&mut self) -> LoxResult<Expr> {
         let mut expr = self.expr_primary()?;
 
-        while self.next_token_if(TokenType::is(TokenType::LeftParen)).is_some() {
-            let mut args = Vec::new();
-            if !self.tokens.peek().is_some_and(|token| token.token_type == TokenType::RightParen) {
-                args.push(self.expression()?);
-                while self.next_token_if(TokenType::is(TokenType::Comma)).is_some() {
-                    // TODO max args size 255
+        loop {
+            if let Some(paren) = self.next_token_if(TokenType::is(TokenType::LeftParen)) {
+                let mut args = Vec::new();
+                if !self.tokens.peek().is_some_and(|token| token.token_type == TokenType::RightParen) {
                     args.push(self.expression()?);
+                    while self.next_token_if(TokenType::is(TokenType::Comma)).is_some() {
+                        // TODO max args size 255
+                        args.push(self.expression()?);
+                    }
                 }
-            }
 
-            let paren = self.expect_token(TokenType::RightParen, 0, "Expected ')' after arguments")?;
-            expr = Expr::new_call(expr, paren, args);
+                let paren = self.expect_token(TokenType::RightParen, paren.line, "Expected ')' after arguments")?;
+                expr = Expr::new_call(expr, paren, args);
+            } else if let Some(dot) = self.next_token_if(TokenType::is(TokenType::Dot)) {
+                let name = self.expect_token(TokenType::Identifier, dot.line, "Expected property name after '.'")?;
+                let var = Var { symbol: self.lookups.get(&name.lexeme), name: name.lexeme };
+                expr = Expr::new_property(expr, var);
+            } else {
+                break;
+            }
         }
 
         Ok(expr)
